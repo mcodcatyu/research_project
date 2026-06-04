@@ -17,3 +17,9 @@ Thumbs.db
 .kaggle/
 *.txt
 data/
+*.db
+mlruns/
+mlflow_artifacts/
+outputs/
+models/
+.mlflow/
