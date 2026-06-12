@@ -51,13 +51,15 @@ def random_forest_model(X_train, y_train, X_test, y_test, feature_names,
         model.fit(X_train, y_train)
 
         # evaluation and recording Metrics
-        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)[:, 1]
+        #y_pred = model.predict(X_test)
+        y_pred = (y_proba > 0.5).astype(int) # threshold should be 0.05 or something
         acc = accuracy_score(y_test, y_pred)
         mlflow.log_metric("test_accuracy", acc)
 
         print("Model training completed!")
         print(classification_report(y_test, y_pred))
-
+        # threshold 0.5
         plot_importance(model, feature_names, title_suffix=experiment_run_name)
         
         return model
