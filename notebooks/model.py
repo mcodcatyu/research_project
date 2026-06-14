@@ -4,7 +4,7 @@ import numpy as np
 import mlflow
 import mlflow.sklearn
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 
 mlflow.set_tracking_uri("file:mlruns")
 
@@ -30,7 +30,7 @@ def plot_importance(model, feature_names, title_suffix=""):
 
 
 def random_forest_model(X_train, y_train, X_test, y_test, feature_names, 
-                        experiment_run_name='RF_Model',n_estimators=200, max_depth=12, n_jobs=-1):
+                        experiment_run_name='RF_Model',n_estimators=200, max_depth=12, n_jobs=-1, threshold=0.5):
     """
     A RandomForest model with automatical recording by 
     default param: 
@@ -53,13 +53,27 @@ def random_forest_model(X_train, y_train, X_test, y_test, feature_names,
         # evaluation and recording Metrics
         y_proba = model.predict_proba(X_test)[:, 1]
         #y_pred = model.predict(X_test)
-        y_pred = (y_proba > 0.5).astype(int) # threshold should be 0.05 or something
+        y_pred = (y_proba > threshold).astype(int) # threshold should be 0.05 or something
+        
         acc = accuracy_score(y_test, y_pred)
         mlflow.log_metric("test_accuracy", acc)
-
+        mlflow.log_param('threshold', threshold)
         print("Model training completed!")
         print(classification_report(y_test, y_pred))
-        # threshold 0.5
+
+        cm =confusion_matrix(y_test, y_pred, normalize='true')
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+
+        fig, ax =plt.subplots(figsize=(6,6))
+        disp.plot(ax=ax,cmap=plt.cm.Blues)
+        plt.title(f'Normalized Confusion Matrix, threshold:{threshold}')
+        # upload figure to mlflow
+        plot_path = f'confusion_matrix_{threshold}.png' # to produce the real confusion matrix plot to cover the mlflow autolog's(threshold=0.5 default) 
+        plt.savefig(plot_path)
+        mlflow.log_artifact(plot_path)
+        plt.close()
+        
+       
         plot_importance(model, feature_names, title_suffix=experiment_run_name)
         
         return model
