@@ -87,7 +87,8 @@ def random_forest_model_search(X_train, y_train, X_test, y_test, feature_names,
     """
     A RandomForest model with automatical recording by 
     default param: 
-        n_estimators=200, max_depth=12, n_job=-1
+        n_estimators=200, max_depth=12, n_job=-1, threshold=0.5, class_weight=None
+    
     """ 
     mlflow.sklearn.autolog()
     with mlflow.start_run(run_name=experiment_run_name) as run:
