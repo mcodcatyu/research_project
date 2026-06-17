@@ -28,7 +28,7 @@ def plot_importance(model, feature_names, title_suffix=""):
     plt.show()
     plt.close(fig)
 
-
+#================================================================
 
 def random_forest_model(X_train, y_train, X_test, y_test, feature_names, 
                         experiment_run_name='RF_Model',n_estimators=200, 
@@ -38,6 +38,7 @@ def random_forest_model(X_train, y_train, X_test, y_test, feature_names,
     default param: 
         n_estimators=200, max_depth=12, n_job=-1
     """ 
+    mlflow.end_run()
     mlflow.sklearn.autolog()
     with mlflow.start_run(run_name=experiment_run_name) as run:
         # record data processing method as tag
@@ -81,6 +82,8 @@ def random_forest_model(X_train, y_train, X_test, y_test, feature_names,
         
         return model
     
+#===============================================
+
 def random_forest_model_search(X_train, y_train, X_test, y_test, feature_names, 
                         experiment_run_name='RF_Model',n_estimators=200, 
                         max_depth=12, n_jobs=-1, threshold=0.5, class_weight=None):
@@ -151,3 +154,4 @@ def random_forest_model_search(X_train, y_train, X_test, y_test, feature_names,
         plot_importance(best_model, feature_names, title_suffix=experiment_run_name)
         
         return best_model
+    
