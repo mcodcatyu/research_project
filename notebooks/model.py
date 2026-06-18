@@ -4,7 +4,7 @@ import numpy as np
 import mlflow
 import mlflow.sklearn
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve
 from sklearn.model_selection import TunedThresholdClassifierCV, TimeSeriesSplit, RandomizedSearchCV
 
 mlflow.set_tracking_uri("file:mlruns")
@@ -154,4 +154,16 @@ def random_forest_model_search(X_train, y_train, X_test, y_test, feature_names,
         plot_importance(best_model, feature_names, title_suffix=experiment_run_name)
         
         return best_model
+    
+    
+#===========================
+def best_threshold(X_test, model, y_test):
+    y_proba = model.predict_proba(X_test)[:, 1]
+    precisions, recalls, thresholds = precision_recall_curve(y_test, y_proba)
+
+    f1_scores = 2 * (precisions *recalls) / (precisions + recalls+ 1e-7) # 1e-7 to prevent Nan
+
+    best_idx = np.argmax(f1_scores[:-1])
+    best_thres = thresholds[best_idx]
+    return best_thres, f1_scores[best_idx], precisions[best_idx], recalls[best_idx]
     
