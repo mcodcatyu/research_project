@@ -24,3 +24,5 @@ outputs/
 models/
 .mlflow/
 *.parquet
+*.html
+*.png
