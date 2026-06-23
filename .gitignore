@@ -26,3 +26,25 @@ models/
 *.parquet
 *.html
 *.png
+# PyTorch
+*.pt
+*.pth
+
+# TensorFlow / Keras
+*.h5
+*.keras
+*.pb
+
+# ONNX
+*.onnx
+
+# Scikit-learn / Python Pickle
+*.pkl
+*.joblib
+model/
+models/
+
+*.bin
+*.model
+*.weights
+*.ckpt
