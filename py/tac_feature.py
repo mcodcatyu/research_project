@@ -1,6 +1,6 @@
-import pandas as pd
-
 from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
+import pandas as pd
 
 class TSFE(BaseEstimator, TransformerMixin):
     def __init__(self, feature_cols,  feature_config, target_col='label1'):
@@ -12,17 +12,13 @@ class TSFE(BaseEstimator, TransformerMixin):
         return self
     #=============
     def _fill_Nan(self, df, feature_col):
-        for i in feature_col:
-            df[i] = df[i].ffill().fillna(0)
+        df[feature_col] = df[feature_col].ffill().bfill()
         return df
     # ============
     def _ratio_featutre_gen(self, df):
-        df['CH4_area_ht_ratio'] = df['CH4_area']/df['CH4_ht']
-        df['CH4_w_ht_ratio'] = df['CH4_w']/df['CH4_ht']
-        df['psamp_pflow_ratio'] = df['psamp']/df['pflow']
-        df['w_duration_ratio'] = df['CH4_w']/df['duration']
+        df['warmbox_temp_cavity_temp_ratio'] = df['warmbox_temp']/df['cavity_temp']
+        fill_feature_ratio = ['warmbox_temp_cavity_temp_ratio']
 
-        fill_feature_ratio = ['CH4_area_ht_ratio', 'CH4_w_ht_ratio', 'psamp_pflow_ratio','w_duration_ratio']
         for i in fill_feature_ratio :
             df[i] = df[i].fillna(0)
         return df
@@ -39,7 +35,7 @@ class TSFE(BaseEstimator, TransformerMixin):
 
     #===============
     def _rolling_std_gen (self, df, feature, period):
-        df[f'{feature}_roll_std_{period}'] = (df[f'{feature}'].rolling(window=pd.to_timedelta(period), closed='left').std()).fillna(0)# self not included, NAN->0
+        df[f'{feature}_roll_std_{period}'] = df[f'{feature}'].rolling(window=pd.to_timedelta(period), closed='left').std().fillna(0)# self not included, NAN->0
         return df
 
     #===============
@@ -49,6 +45,7 @@ class TSFE(BaseEstimator, TransformerMixin):
         return df
     #================
     def _feature_eng_apply(self, df, config):
+
         for opt, params in config.items():
             cols = params['cols']
             period = params.get('period') or params.get('periods', 1) # period's value -> periods's -> 1
@@ -59,21 +56,20 @@ class TSFE(BaseEstimator, TransformerMixin):
                 elif opt == 'lag':
                     df = self._lag_gen(df, feature, period)
                 elif opt == 'roll_std':
-                    df = self._rolling_std_gen( df, feature, period)
+                    df = self._rolling_std_gen(df, feature, period)
                 elif opt == 'roll_mean_res':
                     df = self._rolling_mean_residual_gen(df, feature, period)
         return df 
 
     def transform(self, X):
-        df = X.copy(deep=False)
-        df = df.set_index('datetime')
+        df = X.copy(deep=False) # prevent OOM
+        #df = self._fill_Nan(df, self.feature_cols)
         df = self._fill_Nan(df, self.feature_cols)
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df = df.set_index('datetime').sort_index()
         df = self._ratio_featutre_gen(df)
-        df.index = pd.to_datetime(df.index)
         df = self._feature_eng_apply(df, self.feature_config)
-        df = self._fill_Nan(df, self.feature_cols)
 
         floas_cols = df.select_dtypes(include=['float64']).columns
         df[floas_cols] = df[floas_cols].astype('float32')
-        
         return df
