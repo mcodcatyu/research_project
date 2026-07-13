@@ -35,14 +35,15 @@ class TSFE(BaseEstimator, TransformerMixin):
 
     #===============
     def _rolling_std_gen (self, df, feature, period):
-        df[f'{feature}_roll_std_{period}'] = df[f'{feature}'].rolling(window=pd.to_timedelta(period), closed='left').std().fillna(0)# self not included, NAN->0
+        for p in period:
+            df[f'{feature}_roll_std_{p}'] = (df[f'{feature}'].rolling(window=pd.to_timedelta(p), closed='left').std()).fillna(0)# self not included, NAN->0
         return df
 
     #===============
     def _rolling_mean_residual_gen(self, df, feature, period):
-        df[f'{feature}_roll_mean_{period}'] = df[f'{feature}'].rolling(window=pd.to_timedelta(period), closed='left').mean().fillna(0) # self not included
-        df[f'{feature}_residual_{period}'] = df[f'{feature}']- df[f'{feature}_roll_mean_{period}']# self not included
-        return df
+        for p in period:
+            df[f'{feature}_roll_mean_{p}'] = df[f'{feature}'].rolling(window=pd.to_timedelta(p), closed='left').mean().fillna(0) # self not included
+            df[f'{feature}_residual_{p}'] = df[f'{feature}']- df[f'{feature}_roll_mean_{p}']# self not included
     #================
     def _feature_eng_apply(self, df, config):
 

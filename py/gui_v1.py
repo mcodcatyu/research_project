@@ -1,56 +1,40 @@
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
 
 """
 # My first app
 Here's our first attempt at using data to create a table:
 """
+st.title("Simple Data Dashboard")
 
-import streamlit as st
-import pandas as pd
-df = pd.DataFrame({
-  'first column': [1, 2, 3, 4],
-  'second column': [10, 20, 30, 40]
-})
+uploaded_file = st.file_uploader("Choose a CSV file", type='csv') # file choose
 
-df
+if uploaded_file is not None:
+    st.write("File uploaded...")
 
-import streamlit as st
-import pandas as pd
+    df = pd.read_csv(uploaded_file) # 這裡要做一些轉換
 
-st.write("Here's our first attempt at using data to create a table:")
-st.write(pd.DataFrame({
-    'first column': [1, 2, 3, 4],
-    'second column': [10, 20, 30, 40]
-}))
-import streamlit as st
-import numpy as np
+    st.subheader("Data Preview")
+    st.write(df.head())
 
-dataframe = np.random.randn(10, 20)
-st.dataframe(dataframe)
+    st.subheader("Data Summary")
+    st.write(df.describe())
 
-dataframe = pd.DataFrame(
-    np.random.randn(10, 20),
-    columns=('col %d' % i for i in range(20)))
+    st.subheader("Filter Data")
+    columns = df.columns.tolist()
+    selected_column = st.selectbox("Select column to filter by", columns)
+    unique_values = df[selected_column].unique()
+    selected_value = st.selectbox("Select value", unique_values)
 
-st.dataframe(dataframe.style.highlight_max(axis=0))
+    filtered_df = df[df[selected_column] == selected_value]
+    st.write(filtered_df)
 
-dataframe = pd.DataFrame(
-    np.random.randn(10, 20),
-    columns=('col %d' % i for i in range(20)))
-st.table(dataframe)
+    st.subheader("Plot Data")
+    x_column = st.selectbox("Select x-axis column", columns)
+    y_column = st.selectbox("Select y-axis column", columns)
 
-chart_data = pd.DataFrame(
-     np.random.randn(20, 3),
-     columns=['a', 'b', 'c'])
-
-st.line_chart(chart_data)
-
-
-map_data = pd.DataFrame(
-    np.random.randn(1000, 2) / [50, 50] + [37.76, -122.4],
-    columns=['lat', 'lon'])
-
-st.map(map_data)
-
-x = st.slider('x')  # 👈 this is a widget
-st.write(x, 'squared is', x * x)
+    if st.buton("Generate Plot"):
+        st.line_chart(filtered_df.set_index(x_column)[y_column])
+else: 
+    st.write("Waiting on file upload...")
