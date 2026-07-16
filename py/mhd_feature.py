@@ -11,9 +11,8 @@ class TSFE(BaseEstimator, TransformerMixin):
     def fit (self, X, y=None):
         return self
     #=============
-    def _fill_Nan(self, df, feature_col):
-        for i in feature_col:
-            df[i] = df[i].ffill().fillna(0)
+    def _fill_Nan(self, df, feature_cols):
+        df[feature_cols] = df[feature_cols].ffill().fillna(df[feature_cols].median())
         return df
     # ============
     def _ratio_featutre_gen(self, df):
