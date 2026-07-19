@@ -146,7 +146,7 @@ def get_best_threshold(y_true, y_prob):
     best_thres = thresholds[best_index]
     return best_thres, f1_scores[best_index], precisions[best_index], recalls[best_index]
 
-#=========
+#=========mlflow setting==========
 
 
 mlflow.set_tracking_uri(
@@ -155,7 +155,7 @@ mlflow.set_tracking_uri(
 mlflow.sklearn.autolog()
 
 mlflow.set_experiment('iscnan_flag_rolling')
-#=============== i
+#=============== feature engineering and define the needed features
 
 feature_cols= [#'datetime', 
   #'tamb',  'pamb' ,'tmod', 
@@ -173,7 +173,7 @@ feature_cols= [#'datetime',
 feature_config ={
     'ratio':{'cols':[['CH4_area', 'CH4_w'],
                      ['CH4_w', 'CH4_ht'], ['CH4_skew', 'CH4_w'], ['CH4_w', 'duration'], ['CH4_end_time', 'CH4_start_time'], ['CH4_area', 'pflow']]}, 
-    'diff_cross':{'cols':[['CH4_end_time', 'CH4_start_time']]},# ratio do not have period, just a default
+    'diff_cross':{'cols':[['CH4_end_time', 'CH4_start_time']]},
     'diff':{'cols': [#'CH4_area', 
                      'CH4_ht', 'CH4_end_time','CH4_start_time'#'CH4_rt',
                     ], 'periods':[1, 2]},
@@ -187,7 +187,7 @@ feature_config ={
                              'CH4_w', 'CH4_ht','CH4_end_time'], 'period': ['14D', '30D']}
 }
 
-#================
+#================ data reading and preprocessing=========
 df = pd.read_csv('../data/processed/mhd_ch4_cnan_v1.csv', index_col= 'datetime')
 df = df.drop(df[df['year']==2026].index)
 

@@ -66,3 +66,4 @@ models/
 *.html
 *.png
 .vscode/
+*.json
