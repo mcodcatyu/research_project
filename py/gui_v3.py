@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.express as px
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,8 +11,9 @@ st.write('try difffernt threshold')
 
 #==========
 def load_data():
+    #建立測試資料集
     np.random.seed(42)
-    n_neg, n_pos=139717, 15729
+    n_neg, n_pos=139717, 15729 # 正樣本和負樣本數量
     y_neg = np.zeros(n_neg)
     y_pos = np.ones(n_pos)
 
@@ -23,17 +25,28 @@ def load_data():
     return y_true, y_prob
 
 
-y_true, y_prob = load_data()
+y_true, y_prob = load_data() #得到 y_true 和 y_prob(真實值和預測機率值)
 
+#紀錄原始 index
+df = pd.DataFrame({
+    'original_index': np.arange(len(y_prob)),
+    'true_label': y_true.astype(int),
+    'probability':y_prob
+})
+
+
+#計算權範圍門檻的精準度、召回率
 precisions, recalls, thresholds = precision_recall_curve(y_true, y_prob)
+
 
 
 #========== Sidebar
 st.sidebar.header("Control screeen")
 
-recommmended_thres = 0.4694
+recommmended_thres = 0.4694 #系統預設門檻
 st.sidebar.info(f"Recommend best threshold:{recommmended_thres}")
 
+#讓使用者可以在1~0範圍滑動threshold
 threshold = st.sidebar.slider(
     "Adjust threshold",
     min_value = 0.000,
@@ -42,18 +55,19 @@ threshold = st.sidebar.slider(
     step=0.001
 )
 
-y_proba = (y_prob >=threshold).astype(int)
+
+y_proba = (y_prob >=threshold).astype(int) #預測標籤(預測值)
 
 total_samples = len(y_true)
-selected_count = int(np.sum(y_proba))
-selected_ratio = (selected_count / total_samples) * 100
+selected_count = int(np.sum(y_proba)) #判斷為正樣本的總數量
+selected_ratio = (selected_count / total_samples) * 100#判斷為正樣本的總數量占總資料的百分比 
 
 idx = np.argmin(np.abs(thresholds- threshold))
 current_prec = precisions[idx]
 current_rec= recalls[idx]
 current_f1 = 2 * (current_prec * current_rec) / (current_prec + current_rec + 1e-7)
 
-
+#動態指標與顯示
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(label='selected positive labels', value=f"{selected_count}", delta=f"%in total {selected_ratio:.4f}%")
@@ -66,7 +80,7 @@ st.markdown("----------")
 
 col_left, col_right = st.columns(2)
 
-with col_left:
+with col_left: # 下方畫面左側，柱狀圖顯示當前的Precision, Recall 與 F1-score
     st.subheader("Bar Chart")
 
     metrics_df = pd.DataFrame({
@@ -75,7 +89,7 @@ with col_left:
     })
     st.bar_chart(data=metrics_df, x='metric', y='value')
 
-with col_right:
+with col_right:#下方畫面右側，繪製PR取線，用紅點標註出當前門檻值在曲線上的對應位置。
     st.subheader("Precision-Recall Curve")
     fig, ax = plt.subplots(figsize=(5,5))
     ax.plot(recalls, precisions, label='Model PR Curve')
@@ -89,3 +103,41 @@ with col_right:
     ax.grid(True, linestyle='--', alpha=0.5)
 
     st.pyplot(fig)
+
+
+#=========== Plotly 機率分布圖
+st.subheader("Data possibility distribution (Hover Original Index)")
+#只抽樣5000
+sample_size = min(5000, len(df))
+df_sample = df.sample(n=sample_size, random_state=42).copy()
+df_sample['label_str'] = df_sample['true_label'].map({0: 'Negative (0)', 1:'Positive (1)'})
+fig = px.scatter(
+    df_sample,
+    x='original_index',
+    y = 'probability',
+    color = 'label_str',
+    hover_data = {
+        'original_index': True,
+        'probability':':.4f',
+        'true_label': True,
+        'label_str': False
+    },
+
+    labels = {
+        'original_index': 'Data Index',
+        'probability': 'Predicted Probability',
+        'label_str': 'Class'
+    },
+    title = f'Sample size {sample_size:,} Points Probability Distribution'
+)
+
+fig.add_hline(
+    y = threshold,
+    line_dash = 'dash',
+    line_color = 'red',
+    annotation_text=f'Threshold = {threshold:.3f}',
+    annotation_position='top left'
+    
+)
+
+st.plotly_chart(fig, use_container_width=True)
