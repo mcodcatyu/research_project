@@ -89,7 +89,7 @@ class TSFE(BaseEstimator, TransformerMixin):
         return df
 
     #===============
-    def _rolling_mean_residual_gen(self, df, feature, period):
+    def _roll_mean_percent_res_gen(self, df, feature, period):
         for p in period:
             df[f'{feature}_roll_mean_{p}'] = df[f'{feature}'].rolling(window=p, closed='left').mean()#.fillna(df[f'{feature}_roll_mean_{p}'].median()) # self not included
             df[f'{feature}_residual_{p}'] = ((df[f'{feature}']- df[f'{feature}_roll_mean_{p}'])/(df[f'{feature}_roll_mean_{p}']+1e-7))*100 # self not included
@@ -101,6 +101,16 @@ class TSFE(BaseEstimator, TransformerMixin):
     #=================
     def _log_gen (self, df, feature):
         df[f'{feature}_log'] = np.sign(df[f'{feature}'])*np.log1p(np.abs(df[f'{feature}']))#.fillna(df[f'{feature}_lag_{p}'].median())
+        return df
+    #===========
+    def _relative_per_gen(self, df, feature, period):
+        for p in period:
+            df[f'{feature}_relative_per_{p}'] = (df[f'{feature}']-(df[f'{feature}'].rolling(window=p, closed='left').min()))/((df[f'{feature}'].rolling(window=p, closed='left').max())-(df[f'{feature}'].rolling(window=p, closed='left').min())+1e-7) #.fillna(df[f'{feature}_roll_std_{p}'].median())# self not included, NAN->0
+        return df
+    #=================
+    def _per_rank_gen(self, df, feature, period):
+        for p in period:
+            df[f'{feature}_per_rank_{p}'] = df[f'{feature}'].rolling(window=p, closed='left').rank(pct=True)
         return df
     #=================
     def _feature_eng_apply(self, df, config):
@@ -128,11 +138,18 @@ class TSFE(BaseEstimator, TransformerMixin):
                     df = self._rolling_std_gen( df, feature, period)
                 elif opt == 'roll_mean_percent_res':
                     period = params.get('period') or params.get('periods', 1)
-                    df = self._rolling_mean_residual_gen(df, feature, period)
+                    df = self._roll_mean_percent_res_gen(df, feature, period)
                 elif opt == 'Z_score_res':
                     df = self._Zscore_res_gen(df, feature)
                 elif opt == 'log':
                     df = self._log_gen(df, feature)
+                elif opt  =='relative_per':
+                    period = params.get('period') or params.get('periods', 1)
+                    df = self._relative_per_gen(df, feature, period)
+                elif opt == 'per_rank':
+                    period = params.get('period') or params.get('periods', 1)
+                    df = self._per_rank_gen(df, feature, period)
+
         return df 
 
     def transform(self, X):
@@ -182,46 +199,64 @@ feature_cols= [#'datetime',
   #'psamp',
   'pflow',  'CH4_rt', 'CH4_w',
        'CH4_ht', 'CH4_area', 'CH4_skew', 'CH4_start_time', 'CH4_end_time',
-       'CH4_start_level', 'CH4_end_level', #'duration', #'is_air','is_std',
+       'CH4_start_level', 'CH4_end_level', #'duration', 
+       'is_air','is_std',
        #'previous_type_std', 'previous_type_air','next_type_std', 'next_type_air', 
        'last_std_ht', 'last_air_ht'
-       #'is_ht_zero_and_C_Nan','is_normal_std', #'is_bad_std', 'is_protential_flagged_air'
+       #'is_ht_zero_and_C_Nan','is_normal_std', 
+       # #'is_bad_std', 'is_protential_flagged_air'
        ]
 
 
 
 feature_config ={
-    'diff':{'cols': [#'CH4_area', 
-                    'CH4_ht', #'CH4_end_time','CH4_start_time'#'CH4_rt',
-                ], 'periods':[1, 2]},
+    'diff':{'cols': ['CH4_area', 
+                    'CH4_ht', 'CH4_end_time','CH4_start_time','CH4_rt','CH4_w'
+                ], 'periods':[1,72,504]},
 
     'lag':{'cols':['CH4_area', 'CH4_rt',  'CH4_ht', #'tmod',  'psamp','pamb','tamb',
-                #pflow','CH4_w',
-                'CH4_skew'], 'periods':[1,2]},
+                'pflow','CH4_w',
+                'CH4_skew'], 'periods':[1,72,504]},
 
     
 
-    'roll_std':{'cols': ['CH4_w', 'CH4_end_time'], 'period':['2h','7h','12h','19h','1D','2D']},
-    'roll_mean_percent_res':{'cols':[#'CH4_rt', 'CH4_start_time','CH4_skew' ,'CH4_end_time'
-                             'CH4_w', 'CH4_ht'], 'period': ['2h','7h','12h','19h','1D','2D']},
+    'roll_std':{'cols': ['CH4_w', 'CH4_end_time','CH4_ht'], 'period':['2h','7h','1D','2D','7D']},
 
-    'diff_cross':{'cols':[['CH4_end_time', 'CH4_start_time'], ['CH4_ht_roll_mean_2h', 'CH4_ht_roll_mean_12h'], ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_12h'],
-                           ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_12h'],['last_std_ht', 'last_air_ht']
-                          ]},
+    'roll_mean_percent_res':{'cols':[#'CH4_rt', 'CH4_start_time','CH4_skew' ,'CH4_end_time'
+                             'CH4_w', 'CH4_ht'], 'period': ['2h','7h','1D','2D','7D']},
+
+    'diff_cross':{'cols':[['CH4_end_time', 'CH4_start_time'],
+                           ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_7h'],['last_std_ht', 'last_air_ht'],['CH4_end_level', 'CH4_start_level'],
+                           ['CH4_ht', 'last_std_ht'], ['CH4_ht', 'last_air_ht']
+                           ]}, 
+
     'log':{'cols':['CH4_w_residual_2h', 'CH4_end_time', 'last_std_ht']},
-    'multi':{'cols':[['CH4_w', 'CH4_ht'],['CH4_end_time_CH4_start_time_diff_cross','last_std_ht_log' ]]},
-    'ratio':{'cols':[['CH4_area','CH4_w_CH4_ht_multi'], ['CH4_ht', 'CH4_area'],
-                      ['CH4_w', 'CH4_end_time_CH4_start_time_diff_cross'],
-                     ['CH4_ht', 'last_air_ht'], ['CH4_ht', 'last_air_ht'],
-                     ['CH4_w_roll_std_2h', 'CH4_w_roll_std_1D'],['last_std_ht', 'last_air_ht']#['CH4_ht_roll_mean_1h', 'CH4_ht_roll_mean_7D']
+
+    'multi':{'cols':[['CH4_w', 'CH4_ht'],['CH4_end_time_CH4_start_time_diff_cross','last_std_ht_log']]},
+
+    'ratio':{'cols':[   
+                        ['CH4_area','CH4_w_CH4_ht_multi'], ['CH4_ht', 'CH4_area'],
+                        ['CH4_w', 'CH4_end_time_CH4_start_time_diff_cross'],
+                        ['CH4_rt', 'CH4_end_time_CH4_start_time_diff_cross'],
+
+                        ['CH4_ht', 'last_air_ht'], ['CH4_ht', 'last_air_ht'],
+                        ['CH4_w_roll_std_2h', 'CH4_w_roll_std_1D'],['last_std_ht', 'last_air_ht'],
+
+                        ['CH4_w_roll_std_2h', 'CH4_w_roll_mean_2h'], ['CH4_ht_roll_std_2h', 'CH4_ht_roll_mean_2h'],
+                        ['CH4_w_roll_std_7h', 'CH4_w_roll_mean_7h'],['CH4_ht_roll_std_7h', 'CH4_ht_roll_mean_7h'],
+                        ['CH4_w_roll_std_2D', 'CH4_w_roll_mean_2D'],['CH4_ht_roll_std_2D', 'CH4_ht_roll_mean_2D'],
+                        ['CH4_w_roll_std_7D', 'CH4_w_roll_mean_7D'],  ['CH4_ht_roll_std_7D', 'CH4_ht_roll_mean_7D'],
+                        
                        #['CH4_end_time', 'CH4_start_time'], ['CH4_area', 'pflow'],  ['CH4_skew', 'CH4_w'],['CH4_w', 'CH4_ht']
                        ]}, 
 
 
     'per_change':{'cols':[['CH4_ht_diff_1', 'CH4_ht_lag_1'],['last_std_ht', 'last_air_ht']]},
+    #'relative_per': {'cols': ['CH4_w', 'CH4_end_time','CH4_ht'], 'period':['2h','7h']},
+    #'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_2h', 'CH4_w_roll_std_2h', '2h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
+                           #]},
+    #'per_rank': {'cols': ['CH4_w', 'CH4_skew','CH4_ht'], 'period':['7h','7D','30D']},
 
-    'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_2h', 'CH4_w_roll_std_2h', '2h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
-                           ]},
 
 }
 #================ data reading and preprocessing=========
@@ -258,33 +293,68 @@ y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
 tscv = TimeSeriesSplit(n_splits=5)
 #========ml feature=====
-feature_ml = [  'CH4_w', 'CH4_ht', 'CH4_skew',
-         'CH4_start_level', 'CH4_end_level',
-        'last_air_ht', 'CH4_ht_diff_1', 'CH4_ht_diff_2',
-       'CH4_area_lag_1',   
-       'CH4_ht_lag_1', 'CH4_ht_lag_2', 'CH4_skew_lag_1', 'CH4_skew_lag_2',
-       'CH4_w_roll_std_2h', 'CH4_w_roll_std_7h', 'CH4_w_roll_std_12h',
-       'CH4_w_roll_std_19h', 'CH4_w_roll_std_1D', 
+feature_ml = ['CH4_w', 'CH4_ht', 'CH4_skew', 'CH4_end_level',
+        'last_air_ht', 'last_std_ht', 
+           'is_air','is_std',
+
+
+        'CH4_area_diff_1', 'CH4_area_diff_72','CH4_area_diff_504',
+        'CH4_ht_diff_1','CH4_ht_diff_72','CH4_ht_diff_504',
+        'CH4_end_time_diff_1','CH4_end_time_diff_72','CH4_end_time_diff_504',
+        'CH4_start_time_diff_1','CH4_start_time_diff_72','CH4_start_time_diff_504',
+        'CH4_rt_diff_1','CH4_rt_diff_72','CH4_rt_diff_504',
+        'CH4_w_diff_1','CH4_w_diff_72','CH4_w_diff_504',
+        'CH4_area_lag_1','CH4_area_lag_72','CH4_area_lag_504',
+        'CH4_rt_lag_1','CH4_rt_lag_72','CH4_rt_lag_504',
+        'CH4_ht_lag_1','CH4_ht_lag_72','CH4_ht_lag_504',
+        'pflow_lag_1','pflow_lag_72','pflow_lag_504',
+        'CH4_w_lag_1','CH4_w_lag_72','CH4_w_lag_504',
+        'CH4_skew_lag_1','CH4_skew_lag_72','CH4_skew_lag_504',
+
+       'CH4_w_roll_std_2h', 'CH4_w_roll_std_7h', 
+        'CH4_w_roll_std_1D', 
 
        'CH4_w_roll_mean_2h', 'CH4_w_residual_2h', 'CH4_w_roll_mean_7h',
-       'CH4_w_residual_7h',  'CH4_w_residual_12h',
-       'CH4_w_residual_19h', 
+       'CH4_w_residual_7h', 
        'CH4_w_residual_1D', 
        'CH4_ht_roll_mean_2h',  'CH4_ht_roll_mean_7h',
-       'CH4_ht_roll_mean_12h', 
-       'CH4_ht_roll_mean_19h', 'CH4_ht_roll_mean_1D',
+       
+
+        'CH4_ht_roll_mean_1D',
        'CH4_ht_roll_mean_2D', 
+       
        'CH4_end_time_CH4_start_time_diff_cross',
-       'CH4_ht_roll_mean_2h_CH4_ht_roll_mean_12h_diff_cross',
-       'CH4_w_roll_mean_2h_CH4_w_roll_mean_12h_diff_cross',
 
        'CH4_end_time_CH4_start_time_diff_cross_last_std_ht_log_multi',
        'CH4_area_CH4_w_CH4_ht_multi_ratio', 
        'CH4_w_CH4_end_time_CH4_start_time_diff_cross_ratio',
+
        'CH4_ht_last_air_ht_ratio', 'CH4_w_roll_std_2h_CH4_w_roll_std_1D_ratio',
        'CH4_ht_diff_1_CH4_ht_lag_1_per_change',
-        'CH4_w_2h_zcore_res_gen',
-       'CH4_w_residual_2h_log', 'CH4_end_time_log']
+       'CH4_w_residual_2h_log', 'CH4_end_time_log',
+
+       'CH4_rt_CH4_end_time_CH4_start_time_diff_cross_ratio', 
+       'CH4_end_level_CH4_start_level_diff_cross',
+       'CH4_ht_last_std_ht_diff_cross','CH4_ht_last_air_ht_diff_cross',
+
+       'CH4_w_roll_std_2h_CH4_w_roll_mean_2h_ratio', 'CH4_ht_roll_std_2h_CH4_ht_roll_mean_2h_ratio',
+       'CH4_w_roll_std_7h_CH4_w_roll_mean_7h_ratio', 'CH4_ht_roll_std_7h_CH4_ht_roll_mean_7h_ratio',
+
+       'CH4_w_roll_std_2D_CH4_w_roll_mean_2D_ratio', 'CH4_ht_roll_std_2D_CH4_ht_roll_mean_2D_ratio',
+       'CH4_w_roll_std_7D_CH4_w_roll_mean_7D_ratio', 'CH4_ht_roll_std_7D_CH4_ht_roll_mean_7D_ratio',
+
+
+
+       #'CH4_w_relative_per_2h',
+       #'CH4_w_relative_per_7h', 'CH4_end_time_relative_per_2h',
+       #'CH4_end_time_relative_per_7h', 'CH4_ht_relative_per_2h',
+      # 'CH4_ht_relative_per_7h',
+
+       # 'CH4_w_per_rank_7h', 'CH4_w_per_rank_7D',
+       #'CH4_w_per_rank_30D', 'CH4_skew_per_rank_7h', 'CH4_skew_per_rank_7D',
+       #'CH4_skew_per_rank_30D', 'CH4_ht_per_rank_7h', 'CH4_ht_per_rank_7D',
+       #'CH4_ht_per_rank_30D'
+       ]
 
 
 #=========
@@ -299,18 +369,18 @@ pipe_rnd = Pipeline([
 ])
 
 param_grid = {
-    'clf__n_estimators': [200,250],
-    'clf__max_depth': [25],
+    'clf__n_estimators': [200],
+    'clf__max_depth': [15, 20],
     'clf__min_samples_leaf':[2,5],
     'clf__random_state':[42],
     'clf__max_features':['sqrt', 0.4],
     'clf__n_jobs':[-1],
-    'clf__class_weight':['balanced']
+    'clf__class_weight':['balanced', 'balanced_subsample']
 }
 
 
 
-with mlflow.start_run(run_name="RF_GridSearch_0718") as parent_run:
+with mlflow.start_run(run_name="RF_GridSearch_0719") as parent_run:
     dataset_metadat={
         'feature_cols': feature_cols,
         'feature_config': feature_config
@@ -386,4 +456,4 @@ print(f'Best threshold:{best_threshold:.4f}')
 print(f'Best F1-score:{best_f1:.4f}; Best Precision:{best_prec:.4f}, Recall:{best_rec:.4f}')
 print(classification_report(y_test_final, y_proba_best))
     
-
+print(grid.best_estimator_)

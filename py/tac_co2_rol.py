@@ -27,9 +27,6 @@ def get_data_by_year(file_path, year_list):
     df = pd.read_parquet(file_path, filters=[('year', 'in', year_list)])
     return df
 
-
-
-    
 def best_threshold(X_test, model, y_test):
     y_proba = model.predict_proba(X_test)[:, 1]
     precisions, recalls, thresholds = precision_recall_curve(y_test, y_proba)
@@ -170,7 +167,7 @@ def training(train_years,test_years,  start_year, all_results):
 #==========
 window = 1
 all_results = []
-name = "0712_v1_window_1_all"
+name = "0719_v1_window_1_all"
 with mlflow.start_run(run_name=name) as parent_run:
     for start_year in years:
         with mlflow.start_run(run_name=f'rol_{start_year}', nested=True):
