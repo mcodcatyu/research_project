@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve
 
 st.set_page_config(layout='wide')
-st.title("threshold and numbers")
-st.write('try difffernt threshold')
+#st.title("threshold and numbers")
+#st.write('try difffernt threshold')
 
 #==========
 def load_data():
@@ -190,20 +190,21 @@ with st.container(border=True):
             key='uploader_op',
             type=['txt', 'csv']
         )
-        st.success(f"{file_op} uploaded!")
-        try:
-            df = pd.read_csv(file_op)
-            st.success(
-                f"Loaded successed! Row:{df.shape[0]}; Columns:{df.shape[1]}"
-            )
-            st.write('Data Preview')
-            st.dataframe(df, use_container_width=True)
-            if st.button('Start analysis'):
-                st.success("See below")
-                analysis_results() # 這邊跳轉下面要接的部分
-                
-        except Exception as e:
-            st.error(f"file reading failed, please check file format again")
+        if file_op is not None:
+                    #讀到之後的preview
+            st.success(f"{file_op} uploaded!")
+            try:
+                df = pd.read_csv(file_op)
+                st.success(
+                    f"Loaded successed! Row:{df.shape[0]}; Columns:{df.shape[1]}"
+                )
+                st.write('Data Preview')
+                st.dataframe(df, use_container_width=True)
+                st.button('start analysis', key = 'gc_button', on_click=trigger_analysis)
+            except Exception as e:
+                st.error(f"file reading failed, please check file format again")
+        else:
+            st.session_state["start_analysis"] = False
 
 
 if st.session_state.get("start_analysis", False):

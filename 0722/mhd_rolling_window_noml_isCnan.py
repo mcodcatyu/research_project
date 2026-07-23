@@ -18,19 +18,6 @@ from sklearn.model_selection import TunedThresholdClassifierCV, TimeSeriesSplit,
 import mlflow
 from sklearn.base import BaseEstimator, TransformerMixin
 
-parquet_filename ='../data/processed/tac_co2_processed_v1.parquet'
-#mlflow.set_tracking_uri(
- #   "http://127.0.0.1:5000"
-#)
-#mlflow.sklearn.autolog()
-
-#mlflow.set_experiment('rolling_window_tac_co2_optical')
-
-
-def get_data_by_year(file_path, year_list):
-    df = pd.read_parquet(file_path, filters=[('year', 'in', year_list)]).set_index('datetime')
-    return df
-
 #=====
 import numpy as np
 import pandas as pd
@@ -182,104 +169,116 @@ def get_best_threshold(y_true, y_prob):
 
 
 #========   
-feature_cols= [ 
-         'co2_dry','co2_wet', 
-        'co2_target_error',  #'co2_C',         'co2_N',     
-        'co2_Cdrift', 'co2_Nfiltered', 
-       'cycle_time', 'h2o', 'cavity_press', 'cavity_temp',
-       'das_temp', 'etalon_temp', 'warmbox_temp', 'outlet_valve', #'datetime'
-       'cycle_time_diff','time_since_switch'
-]
+feature_cols= [#'datetime', 
+  #'tamb',  'pamb' ,
+  #'psamp',
+  
+  'pflow', 'tmod',  'CH4_rt', 'CH4_w',
+       'CH4_ht', 'CH4_area', 'CH4_skew', 'CH4_start_time', 'CH4_end_time',
+       'CH4_start_level', 'CH4_end_level', #'duration', 
+       'is_air','is_std',
+       #'previous_type_std', 'previous_type_air','next_type_std', 'next_type_air', 
+       'last_std_CH4_ht', 'last_air_CH4_ht', 'last_std_CH4_area',
+       'last_air_CH4_area', 'last_std_CH4_rt', 'last_air_CH4_rt',
+       'last_std_CH4_start_level', 'last_air_CH4_start_level',
+       'level_rt_ratio', 'rt_position', 'baseline_slope', 'level_area_ratio'
+       #'is_ht_zero_and_C_Nan','is_normal_std', 
+       # #'is_bad_std', 'is_protential_flagged_air'
+       ]
 
 feature_config ={
-    'diff':{'cols': [ 'warmbox_temp','cavity_temp',
-                     'das_temp','cycle_time','cavity_press',
-                     'h2o','co2_dry'], 'periods':[1, 2]},
+    'diff':{'cols': ['CH4_area', 
+                    'CH4_ht','CH4_w' ,#'tmod',#'CH4_end_time','CH4_start_time',,'CH4_rt'
+                ], 'periods':[1]},
 
-    'lag':{'cols':['cycle_time'], 'periods':[1,2]},
+   # 'lag':{'cols':['CH4_area', 'CH4_rt',  'CH4_ht', #'tmod',  'psamp','pamb','tamb',,'CH4_skew'
+                #'pflow',
+      #         'CH4_w'], 'periods':[1]},
 
-    'roll_std':{'cols': ['cavity_press', 'cavity_temp',
-            'das_temp', 'etalon_temp', 'warmbox_temp', 'co2_target_error','cycle_time'], 'period':['60s', '5min']},
+    
 
-    'roll_mean_percent_res':{'cols':['cycle_time','co2_target_error'], 'period': ['60s','5min']},
+    'roll_std':{'cols': ['CH4_w', 'CH4_end_time','CH4_ht','CH4_area'], 'period':['40min','2h','6h']},
 
-    'diff_cross':{'cols':[['co2_wet','co2_dry'],
+    'roll_mean_percent_res':{'cols':['CH4_rt' ,
+                             'CH4_w', 'CH4_ht','CH4_area'], 'period': ['40min','2h','6h']},
+
+    'diff_cross':{'cols':[['CH4_end_time', 'CH4_start_time'],
+                          # ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_7h'],
+                           ['last_std_CH4_ht', 'last_air_CH4_ht'],#['CH4_end_level', 'CH4_start_level'],
+                           ['CH4_ht', 'last_std_CH4_ht'], ['CH4_ht', 'last_air_CH4_ht'],#['CH4_ht', 'CH4_ht_lag_72'],['CH4_w', 'CH4_w_lag_72'],
+                           #['pflow', 'pflow_lag_1'],['CH4_skew','CH4_skew_lag_1']
                            ]}, 
 
-    'log':{'cols':['h2o','co2_target_error'
+    'log':{'cols':['last_std_CH4_ht','last_air_CH4_ht'
                    #'CH4_end_time', 
                    ]},
 
-    'multi':{'cols':[['h2o', 'co2_dry'],['cavity_press', 'cavity_temp'], ['outlet_valve','cavity_press_diff_1']]},
+    'multi':{'cols':[['CH4_w', 'CH4_ht'],['CH4_end_time_CH4_start_time_diff_cross','last_std_CH4_ht_log'], ['CH4_end_time_CH4_start_time_diff_cross','last_air_CH4_ht_log']]},
 
     'ratio':{'cols':[   
-                        ['outlet_valve','cavity_press'], 
+                        ['CH4_area','CH4_w_CH4_ht_multi'], ['CH4_ht', 'CH4_area'],
+                        ['CH4_w', 'CH4_end_time_CH4_start_time_diff_cross'],
+                       # ['CH4_rt', 'CH4_end_time_CH4_start_time_diff_cross'],
+
+                        ['CH4_ht', 'last_air_CH4_ht'],# ['CH4_ht', 'last_air_ht'],
+                        #['CH4_w_roll_std_2h', 'CH4_w_roll_std_1D'],
+                        ['last_std_CH4_ht', 'last_air_CH4_ht'],
+                        ['CH4_start_level', 'CH4_end_level'],
+                        ['CH4_area', 'last_std_CH4_area'],['CH4_start_level', 'last_std_CH4_start_level'],
+                        ['CH4_w_roll_std_40min', 'CH4_w_roll_mean_40min'], ['CH4_ht_roll_std_40min', 'CH4_ht_roll_mean_40min'],['CH4_area_roll_std_40min', 'CH4_area_roll_mean_40min'],
+                        ['CH4_w_roll_std_2h', 'CH4_w_roll_mean_2h'], ['CH4_ht_roll_std_2h', 'CH4_ht_roll_mean_2h'],['CH4_area_roll_std_2h', 'CH4_area_roll_mean_2h'],
+                        ['CH4_w_roll_std_6h', 'CH4_w_roll_mean_6h'], ['CH4_ht_roll_std_6h', 'CH4_ht_roll_mean_6h'],['CH4_area_roll_std_6h', 'CH4_area_roll_mean_6h'],
+                        #['CH4_ht_roll_std_24h', 'CH4_ht_roll_mean_24h']
+                       # ['CH4_w_roll_std_7h', 'CH4_w_roll_mean_7h'],['CH4_ht_roll_std_7h', 'CH4_ht_roll_mean_7h'],
+                        #['CH4_w_roll_std_2D', 'CH4_w_roll_mean_2D'],['CH4_ht_roll_std_2D', 'CH4_ht_roll_mean_2D'],
+                        #['CH4_rt', 'last_std_rt'],
                         
-                        
-                        ['cycle_time_roll_std_5min', 'cycle_time_roll_mean_5min'], 
-                        ['cavity_press_roll_std_5min', 'cavity_temp_roll_std_5min'],
-                        ['cavity_press_roll_std_60s', 'cavity_temp_roll_std_60s'],
+                       #['CH4_end_time', 'CH4_start_time'], ['CH4_area', 'pflow'],  ['CH4_skew', 'CH4_w'],['CH4_w', 'CH4_ht']
                        ]}, 
 
 
     #'per_change':{'cols':[['CH4_ht_diff_1', 'CH4_ht_lag_1'],['last_std_ht', 'last_air_ht']]},
     #'relative_per': {'cols': ['CH4_w', 'CH4_end_time','CH4_ht'], 'period':['2h','7h']},
-    'Z_score_res':{'cols':[['co2_target_error', 'co2_target_error_roll_mean_5min', 'co2_target_error_roll_std_5min', '5min'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
-                           ]},
-    'per_rank': {'cols': ['co2_target_error', 'co2_Cdrift'], 'period':['60s','5min']},
+    #'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_2h', 'CH4_w_roll_std_2h', '2h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
+                           #]},
+    #'per_rank': {'cols': ['CH4_w', 'CH4_skew','CH4_ht'], 'period':['7h','7D','30D']},
 
 
 }
 #===============
-def add_columns(df):
-    switch_flag = df['port'].ne(df['port'].shift(1))|df['sample'].ne(df['sample'].shift(1))
 
-
-    switch_group = switch_flag.cumsum()
-
-    group_start_time = pd.Series(df.index, index=df.index).groupby(switch_group).transform('first')
-
-    df['time_since_switch'] = (df.index -group_start_time ).dt.total_seconds()
-
-    group_start_cycle = df['cycle_time'].groupby(switch_group).transform('first')
-
-    df['cycle_time_diff'] = df['cycle_time'] - group_start_cycle
-
+def get_data_by_year(file_path, year_list):
+    df = pd.read_parquet(file_path, filters=[('year', 'in', year_list)]).set_index('datetime')
     return df
 
-#===========
-feature_ml = ['time_since_switch',
- 'co2_target_error_per_rank_60s',
- 'cycle_time_residual_5min',
- 'cycle_time_roll_std_5min_cycle_time_roll_mean_5min_ratio',
- 'cycle_time_roll_std_5min',
- 'co2_Cdrift_per_rank_60s',
- 'cycle_time_residual_60s',
- 'etalon_temp',
- 'cycle_time',
- 'cycle_time_lag_1',
- 'cycle_time_lag_2',
- 'outlet_valve',
- 'outlet_valve_cavity_press_ratio',
- 'cycle_time_roll_mean_60s',
- 'cavity_press_roll_std_5min_cavity_temp_roll_std_5min_ratio',
- 'co2_Nfiltered',
- 'cycle_time_diff',
- 'h2o_log',
- 'co2_wet_co2_dry_diff_cross',
- 'h2o',
- 'h2o_co2_dry_multi',
- 'co2_target_error_residual_5min',
- #'cycle_time_diff_2',
- #'co2_target_error_per_rank_5min',
- #'cavity_temp_roll_std_5min'
-]
+
+parquet_filename ='../data/processed/mhd_ch4_cnan_v1.parquet'
+df = pd.read_csv('../data/processed/mhd_ch4_cnan_v1.csv', index_col= 'datetime')
+df = df.drop(df[df['year']==2026].index)
+def add_columns(df):
+   
+
+    target_cols = ['ht', 'area', 'rt', 'start_level']
+
+    for col in target_cols:
+        col = f'CH4_{col}'
+
+        for t_type in ['std', 'air']:
+            type_median = df.loc[df['type'] == t_type, col ].median()
+
+            only_series = df[col].where(df['type']==t_type)
+            df[f'last_{t_type}_{col}'] = only_series.ffill().shift(1).fillna(type_median)
+
+
+    df['level_rt_ratio'] = (df['CH4_end_time'] -df['CH4_start_time'])/df['CH4_rt']
+    df['rt_position'] = (df['CH4_rt'] - df['CH4_start_time']) / df['CH4_w']
+    df['baseline_slope'] =(df['CH4_end_level'] -df['CH4_start_level'])/df['CH4_w']
+    df['level_area_ratio'] = np.maximum(df['CH4_end_level'],df['CH4_start_level'] )/(df['CH4_area'])
+    return df
+    #===========
+
 #==========================
-
-
-years_df = pd.read_parquet(parquet_filename, columns=['year'])
-years = years_df['year'].unique()
-years =years_df.loc[years_df['year'] != 2025, 'year'].unique()
+years = df['year'].unique()
 print(years)
 tsfe = TSFE(feature_cols=feature_cols, feature_config=feature_config)
 #===
@@ -295,17 +294,16 @@ pipe_rnd = Pipeline([
     ('clf', RandomForestClassifier())
 ])
 param_grid = {
-    'clf__n_estimators': [50],
-    'clf__max_depth': [6],
-    'clf__min_samples_leaf':[50],
-    'clf__max_samples':[0.2, 0.5],
+    'clf__n_estimators': [150],
+    'clf__max_depth': [5, 8],
+    'clf__min_samples_leaf':[15],
     'clf__random_state':[42],
     'clf__max_features':['sqrt'],
-    'clf__n_jobs':[1],
+    'clf__n_jobs':[4],
     'clf__class_weight':['balanced']
 }
 
-window = 2
+window = 10
 test_size = 1
 all_results = []
 importance_dict = {}
@@ -337,9 +335,9 @@ for start_year in years:
         #data_test['datetime'] = pd.to_datetime(data_test['datetime'])
 
         X_train = data_train[feature_cols]
-        y_train = data_train['label1']
+        y_train = data_train['label_c_nan']
         X_test = data_test[feature_cols]
-        y_test = data_test['label1']
+        y_test = data_test['label_c_nan']
         # feature engineering
         X_train = tsfe.fit_transform(X_train)
         X_test = tsfe.transform(X_test)
@@ -425,14 +423,14 @@ for start_year in years:
 rolling_results = pd.DataFrame(all_results)
 
 df_imp = pd.DataFrame(importance_dict)
-df_imp.to_csv('df_imp_0723.csv')
+df_imp.to_csv('df_imp_mhd_0723.csv')
 
 df_imp_test = pd.DataFrame(test_importance_dict)
-df_imp_test.to_csv('df_imp_test_0723.csv')
+df_imp_test.to_csv('df_imp_test_mhd_0723.csv')
 
 print("============ Final Results=======")
 print(rolling_results)
-rolling_results.to_csv('rolling_results_all_feature_2year_1year.csv')
+rolling_results.to_csv('mhd_rolling_results_all_feature_2year_1year.csv')
 
 #metric_cols = ['PR-AUC',"F1-score_test", "Precision_test", "Recall_test" , 'F1 Gap (Train-Test)']
 #summary_row = {"Training_Year":"Mean +- Std", "Test Year": "-", "Best Params": "-"}
