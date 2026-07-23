@@ -182,14 +182,28 @@ def get_best_threshold(y_true, y_prob):
 
 
 #========   
-feature_cols= [ 
-         'co2_dry','co2_wet', 
-        'co2_target_error',  #'co2_C',         'co2_N',     
-        'co2_Cdrift', 'co2_Nfiltered', 
-       'cycle_time', 'h2o', 'cavity_press', 'cavity_temp',
-       'das_temp', 'etalon_temp', 'warmbox_temp', 'outlet_valve', #'datetime'
-       'cycle_time_diff','time_since_switch'
-]
+feature_cols= [#'datetime', 
+  #'tamb',  'pamb' ,
+  #'psamp',
+  
+  'pflow', 'tmod',  'CH4_rt', 'CH4_w',
+       'CH4_ht', 'CH4_area', 'CH4_skew', 'CH4_start_time', 'CH4_end_time',
+       'CH4_start_level', 'CH4_end_level', #'duration', 
+       'is_air','is_std',
+       #'previous_type_std', 'previous_type_air','next_type_std', 'next_type_air', 
+       'last_std_ht', 'last_air_ht','level_rt_ratio',
+       'rt_position',
+        'baseline_slope',
+        'level_area_ratio',
+        'last_std_area',
+        'last_air_area',
+        'last_std_rt',
+        'last_air_rt',
+        'last_std_start_level',
+        'last_air_start_level',
+       #'is_ht_zero_and_C_Nan','is_normal_std', 
+       # #'is_bad_std', 'is_protential_flagged_air'
+       ]
 
 feature_config ={
     'diff':{'cols': [ 'warmbox_temp','cavity_temp',
@@ -303,7 +317,7 @@ param_grid = {
     'clf__class_weight':['balanced']
 }
 
-window = 2
+window = 1
 test_size = 1
 all_results = []
 name = "0721_v1_window_1_all"
@@ -417,4 +431,4 @@ final_paper_table = pd.concat([rolling_results, summary_df], ignore_index=True)
 
 print("============ Final Results=======")
 print(final_paper_table.to_string(index=False))
-final_paper_table.to_csv('final_paper_table_2_1.csv')
+final_paper_table.to_csv('final_paper_table.csv')

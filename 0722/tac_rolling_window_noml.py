@@ -306,7 +306,10 @@ param_grid = {
 window = 2
 test_size = 1
 all_results = []
+importance_dict = {}
+
 name = "0721_v1_window_1_all"
+
 for start_year in years:
         train_years = list(range(start_year, start_year + window))
         test_years = list(range(start_year + window, start_year + window+ test_size))
@@ -339,8 +342,8 @@ for start_year in years:
         X_test = tsfe.transform(X_test)
 
         #
-        X_train_final = X_train [feature_ml]
-        X_test_final = X_test [feature_ml]
+        X_train_final = X_train #[feature_ml]
+        X_test_final = X_test #[feature_ml]
         y_train.index= X_train_final.index
         y_test.index =X_test_final.index
         
@@ -361,6 +364,9 @@ for start_year in years:
 
         best_clf = grid.best_estimator_
         best_clf.fit(X_train_final, y_train)
+
+        importance_dict[test_years[0]] = pd.Series(best_clf.named_steps['clf'].feature_importances_, index=X_train_final.columns)
+
         #model = random_forest_model(
         #X_train_final, y_train, X_test_final, y_test,
         #feature_names=feature_cols,
@@ -403,18 +409,24 @@ for start_year in years:
         gc.collect()
 rolling_results = pd.DataFrame(all_results)
 
-print(rolling_results)
-
-metric_cols = ['PR-AUC',"F1-score_test", "Precision_test", "Recall_test" , 'F1 Gap (Train-Test)']
-summary_row = {"Training_Year":"Mean +- Std", "Test Year": "-", "Best Params": "-"}
-
-for col in metric_cols:
-    mean_val = rolling_results[col].mean()
-    std_val = rolling_results[col].std()
-
-summary_df = pd.DataFrame([summary_row])
-final_paper_table = pd.concat([rolling_results, summary_df], ignore_index=True)
+df_imp = pd.DataFrame(importance_dict)
+df_imp.to_csv('df_imp.csv')
 
 print("============ Final Results=======")
-print(final_paper_table.to_string(index=False))
-final_paper_table.to_csv('final_paper_table_2_1.csv')
+print(rolling_results)
+rolling_results.to_csv('rolling_results_all_feature.csv')
+
+#metric_cols = ['PR-AUC',"F1-score_test", "Precision_test", "Recall_test" , 'F1 Gap (Train-Test)']
+#summary_row = {"Training_Year":"Mean +- Std", "Test Year": "-", "Best Params": "-"}
+
+#for col in metric_cols:
+#    mean_val = rolling_results[col].mean()
+#    std_val = rolling_results[col].std()
+#    summary_row[col]
+
+#summary_df = pd.DataFrame([summary_row])
+#final_paper_table = pd.concat([rolling_results, summary_df], ignore_index=True)
+
+
+#print(final_paper_table.to_string(index=False))
+#final_paper_table.to_csv('final_paper_table_2_1.csv')

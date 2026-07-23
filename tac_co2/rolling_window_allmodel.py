@@ -17,7 +17,11 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.model_selection import TunedThresholdClassifierCV, TimeSeriesSplit, RandomizedSearchCV
 import mlflow
 from sklearn.base import BaseEstimator, TransformerMixin
+#==============
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
+#=========
 parquet_filename ='../data/processed/tac_co2_processed_v1.parquet'
 #mlflow.set_tracking_uri(
  #   "http://127.0.0.1:5000"
@@ -290,7 +294,9 @@ tsfe = TSFE(feature_cols=feature_cols, feature_config=feature_config)
 #======
 pipe_rnd = Pipeline([
     #('scl', StandardScaler()),
-    ('clf', RandomForestClassifier())
+    ('clf', RandomForestClassifier()),
+    ('xgb',XGBClassifier()),
+    ('lgb', LGBMClassifier())
 ])
 param_grid = {
     'clf__n_estimators': [50],
@@ -303,7 +309,7 @@ param_grid = {
     'clf__class_weight':['balanced']
 }
 
-window = 2
+window = 1
 test_size = 1
 all_results = []
 name = "0721_v1_window_1_all"
@@ -417,4 +423,4 @@ final_paper_table = pd.concat([rolling_results, summary_df], ignore_index=True)
 
 print("============ Final Results=======")
 print(final_paper_table.to_string(index=False))
-final_paper_table.to_csv('final_paper_table_2_1.csv')
+final_paper_table.to_csv('final_paper_table_1year1year.csv')
