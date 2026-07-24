@@ -294,7 +294,7 @@ pipe_rnd = Pipeline([
     ('clf', RandomForestClassifier())
 ])
 param_grid = {
-    'clf__n_estimators': [150],
+    'clf__n_estimators': [100],
     'clf__max_depth': [5, 8],
     'clf__min_samples_leaf':[15],
     'clf__random_state':[42],
@@ -303,7 +303,7 @@ param_grid = {
     'clf__class_weight':['balanced']
 }
 
-window = 10
+window = 1
 test_size = 1
 all_results = []
 importance_dict = {}
@@ -353,7 +353,7 @@ for start_year in years:
 
         X_search, _, y_search, _ = train_test_split(
             X_train_final, y_train,
-            train_size = 30000,
+            train_size = 20000,
             stratify=y_train,
             random_state=42
         )
@@ -423,14 +423,14 @@ for start_year in years:
 rolling_results = pd.DataFrame(all_results)
 
 df_imp = pd.DataFrame(importance_dict)
-df_imp.to_csv('df_imp_mhd_0723.csv')
+df_imp.to_csv('df_imp_mhd_1year_1year.csv')
 
 df_imp_test = pd.DataFrame(test_importance_dict)
-df_imp_test.to_csv('df_imp_test_mhd_0723.csv')
+df_imp_test.to_csv('df_imp_test_mhd_1year_1year.csv')
 
 print("============ Final Results=======")
 print(rolling_results)
-rolling_results.to_csv('mhd_rolling_results_all_feature_2year_1year.csv')
+rolling_results.to_csv('mhd_rolling_results_all_feature_1year_1year.csv')
 
 #metric_cols = ['PR-AUC',"F1-score_test", "Precision_test", "Recall_test" , 'F1 Gap (Train-Test)']
 #summary_row = {"Training_Year":"Mean +- Std", "Test Year": "-", "Best Params": "-"}
