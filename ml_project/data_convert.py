@@ -49,6 +49,6 @@ def parse_gcmd_file(file_path):
 
     df_mhd_flag.index = real_data_mhd.index 
     real_data_mhd = pd.concat([real_data_mhd, df_mhd_flag], axis=1)
-        
+    #感覺這邊應該順便作時間處裡? 設datetime為index
     return real_data_mhd
 

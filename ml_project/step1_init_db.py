@@ -9,7 +9,7 @@ TABLE_NAME = 'mhd_ch4_gcmd' # sql 裡面的table名字
 # 資料處裡
 df = parse_gcmd_file(CSV_FILE_PATH)
 file_path = f'data/{TABLE_NAME}.csv'
-df.to_csv(file_path)
+df.to_csv(file_path, index=False)
 
 
 #========
@@ -25,7 +25,7 @@ print(
     f'Successed! data contains {len(df)}, columns{list(df.columns)}'
 )
 
-df.to_sql(name=TABLE_NAME, con=engine, if_exists='replace', index=False)
+df.to_sql(name=TABLE_NAME, con=engine, if_exists='append', index=False)# 如果是使用這一上傳就
 print(f'Data loaded into SQL data table [{TABLE_NAME}]')
 
 #驗證資料庫裡面的資料筆數
