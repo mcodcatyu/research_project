@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: mysql_db
+    environment:
+      MTSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: mydatabase
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql/docker-entrypoint-initdb.d/init.sql
+      - db_data:/var/lib/mysql
+
+  web:
+    build: .
+    container_name:streamlit_app
+    ports:
+      - '8501:8501'
+    environment:
+      - DB_HOST=db
+      - DB_PASS=rootpassword
+    volumes:
+      - ./models:/app/models
+    depends_on:
+      - db
+
+  volumes:
+    db_data:
+
+    

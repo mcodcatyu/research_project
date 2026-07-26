@@ -44,7 +44,7 @@ def analysis_results():
     #========== Sidebar
     st.sidebar.header("Control screeen")
 
-    recommmended_thres = 0.4694 #系統預設門檻
+    recommmended_thres = 0.5 #系統預設門檻
     st.sidebar.info(f"Recommend best threshold:{recommmended_thres}")
 
     #讓使用者可以在1~0範圍滑動threshold
@@ -67,7 +67,7 @@ def analysis_results():
     current_prec = precisions[idx]
     current_rec= recalls[idx]
     current_f1 = 2 * (current_prec * current_rec) / (current_prec + current_rec + 1e-7)
-
+#========= 感覺這邊不要好像也可以?
     #動態指標與顯示
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -107,11 +107,19 @@ def analysis_results():
 
 
     #=========== Plotly 機率分布圖
+
+    
     st.subheader("Data possibility distribution (Hover Original Index)")
     #只抽樣5000
     sample_size = min(5000, len(df))
     df_sample = df.sample(n=sample_size, random_state=42).copy()
     df_sample['label_str'] = df_sample['true_label'].map({0: 'Negative (0)', 1:'Positive (1)'})
+
+    pos_anomalies_df = df[df['probability'] >= threshold].sort_values(
+            by='probability', ascending=False
+        )
+
+    
     fig = px.scatter(
         df_sample,
         x='original_index',
@@ -129,7 +137,7 @@ def analysis_results():
             'probability': 'Predicted Probability',
             'label_str': 'Class'
         },
-        title = f'Sample size {sample_size:,} Points Probability Distribution'
+        title = f'Sample size {sample_size:,} Points Probability Distribution,probability > Threshold ({threshold:.3f}) potential anomaly data ,total {len(pos_anomalies_df):,}'
     )
 
     fig.add_hline(
@@ -142,6 +150,33 @@ def analysis_results():
     )
 
     st.plotly_chart(fig, use_container_width=True)
+    with st.expander(f'probability > Threshold ({threshold:.3f}) potential anomaly data ,total {len(pos_anomalies_df):,}', expanded=False):
+        if not pos_anomalies_df.empty:
+            st.caption('probability ascending:')
+
+            st.dataframe(
+                pos_anomalies_df,
+                use_container_width=True,
+                column_config={
+                    'probability': st.column_config.NumberColumn(
+                        'Predicted Probability',
+                        format='%.4f'
+                    )
+                }
+            )
+
+            csv_data = pos_anomalies_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label='Download anomaly data CSV',
+                data=csv_data,
+                file_name=f'anomalies_threshold_{threshold:.3f}.csv',
+                mime='text/csv'
+            )
+        else:
+            st.success("Currently, No data probability higher than this Threshold!")
+
+
+    
 #===========
 if "start_analysis" not in st.session_state:
     st.session_state['start_analysis'] = False
@@ -167,7 +202,7 @@ with st.container(border=True):
 
         if file_gc is not None:
             #讀到之後的preview
-            st.success(f"{file_gc} uploaded!")
+            st.success(f"{file_gc.name} uploaded!")
             try:
                 df = pd.read_csv(file_gc)
                 st.success(
@@ -178,8 +213,7 @@ with st.container(border=True):
                 st.button('start analysis', key = 'gc_button', on_click=trigger_analysis)
             except Exception as e:
                 st.error(f"file reading failed, please check file format again")
-        else:
-            st.session_state["start_analysis"] = False
+
 
 
     with tab_op:
@@ -192,7 +226,7 @@ with st.container(border=True):
         )
         if file_op is not None:
                     #讀到之後的preview
-            st.success(f"{file_op} uploaded!")
+            st.success(f"{file_op.name} uploaded!")
             try:
                 df = pd.read_csv(file_op)
                 st.success(
@@ -200,11 +234,10 @@ with st.container(border=True):
                 )
                 st.write('Data Preview')
                 st.dataframe(df, use_container_width=True)
-                st.button('start analysis', key = 'gc_button', on_click=trigger_analysis)
+                st.button('start analysis', key = 'op_button', on_click=trigger_analysis)
             except Exception as e:
                 st.error(f"file reading failed, please check file format again")
-        else:
-            st.session_state["start_analysis"] = False
+
 
 
 if st.session_state.get("start_analysis", False):
