@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 import numpy as np
-from data_convert import GCMDprocessor
 
 # 連sql
 st.title('SQL Connection test')
@@ -12,7 +11,7 @@ BASE_URL = os.getenv(
     "mysql+pymysql://root:rootpassword@db:3306/",
 )
 
-# 連database
+#連database
 DB_URL = os.getenv(
     'DATABASE_URL',
     "mysql+pymysql://root:rootpassword@db:3306/mydatabase",
@@ -57,35 +56,25 @@ try:
  
     #================
     with tab1:
-        st.subheader('1. Produce data')
+        st.subheader('1. produce data')
+        df = analysis_results() # 資料在這邊
+        st.dataframe(df.head(100), use_container_width=True)
+        target_table = st.text_input('Enter table name:', 'users')
+  
 
-        uploaded_file = st.file_uploader("Select upload file", type=['txt'])
-        if uploaded_file is not None:
-            processor = GCMDprocessor(uploaded_file)
-            df = processor.parse_file()# 檔案進來就解析
+        if st.button('upload data into database'):   
+            with st.spinner('Data uploading...' ):
+                df.to_sql(
+                    name=target_table,
+                    con=engine,
+                    if_exists='append',
+                    index=False,
+                    chunksize=10000,
+                )   
 
-            st.write("Preview 100 :")
-            st.dataframe(df.head(100), use_container_width=True)
-            #資料在這邊
-            st.dataframe(df.head(100), use_container_width=True)
-            target_table = st.text_input('Enter table name:', 'users')
-            write_mode = st.radio("writing mode:", ["append","replace" ], format_func=lambda x: "Append" if x=='append' else "replace")
+                st.balloons() # 氣球圖案
+                st.success(f'uploaded {len(df):,} data to `{target_table} table')
 
-
-            if st.button('upload data into database'):   
-                with st.spinner('Data uploading...' ):
-                    df.to_sql(
-                        name=target_table,
-                        con=engine,
-                        if_exists='append',
-                        index=True,
-                        chunksize=10000,
-                    )   
-
-                    st.balloons() # 氣球圖案
-                    st.success(f'uploaded {len(df):,} data to `{target_table} table')
-        else:
-            st.info("Please upload txt file")
 
 
     with tab2:
