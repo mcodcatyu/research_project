@@ -40,7 +40,7 @@ class TSFE(BaseEstimator, TransformerMixin):
         elif opt == 'per_rank':
             for p in period:
                 df[f'{feature}_per_rank_{p}'] = df[f'{feature}'].rolling(window=p, closed='left').rank(pct=True)
-    def _gen_cross_feature(self, df, opt, feat, period):
+    def _gen_cross_feature(self, df, opt, feat):
         f0, f1 = feat[0], feat[1]
         if opt == 'ratio':
             df[f'{f0}_{f1}_ratio'] = df[f0]/df[f1]
@@ -61,9 +61,9 @@ class TSFE(BaseEstimator, TransformerMixin):
             period = params.get('period') or params.get('periods', 1) # period's value -> periods's -> 1
             for feature in cols:
                 if opt in cross_opts:
-                    self._gen_cross_feature(df, opt, feature, period)
+                    self._gen_cross_feature(df, opt, feature)
                 else:
-                    self._gen_single_feature(df, opt, feature, period)
+                    self._gen_single_feature(df, opt, feature)
         return df 
 
     def transform(self, X):

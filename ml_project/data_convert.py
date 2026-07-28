@@ -121,3 +121,7 @@ class GCMDprocessor:
 
     #def _predict(self, df):
         #預測的代碼放這
+
+class OPTprocessor:
+    def __init__(self, uploaded_file):
+        self.uploaded_file = uploaded_file

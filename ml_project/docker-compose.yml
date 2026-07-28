@@ -25,7 +25,8 @@ services:
       - DB_NAME=mydatabase
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/mydatabase
     volumes:
-      - ./models:/app/models
+      - .:/app
+      - /app/__pycache__
     depends_on:
       - db
 

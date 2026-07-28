@@ -1,6 +1,7 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 import numpy as np
 import pandas as pd
+import numpy as np
 
 
 class TSFE(BaseEstimator, TransformerMixin):
@@ -40,6 +41,32 @@ class TSFE(BaseEstimator, TransformerMixin):
         elif opt == 'per_rank':
             for p in period:
                 df[f'{feature}_per_rank_{p}'] = df[f'{feature}'].rolling(window=p, closed='left').rank(pct=True)
+
+        elif opt == 'roll_median':
+            for p in period:
+                df[f'{feature}_roll_median_{p}'] = (
+                    df[f'{feature}'].rolling(window=p, closed='left').median()
+                )
+        elif opt == 'roll_mad':
+            def _calc_mad(x):
+                med = np.median(x)
+                return np.median(np.abs(x-med))
+
+            for p in period:
+                df[f'{feature}_mad_{p}']=(
+                    df[f'{feature}'].rolling(window=p, closed='left').apply(_calc_mad, raw=True)
+                )
+                
+        elif opt == 'roll_median_percent_res':
+            """
+            強健殘差(當前點偏離中位數百分比)
+            """
+            for p in period:
+                median_col =df[f'{feature}_roll_median_{p}']
+                df[f'{feature}_robust_residual_{p}'] = (
+                    (df[f'{feature}']-median_col)/(median_col +1e-7 )*100
+                )
+
     def _gen_cross_feature(self, df, opt, feat, period):
         f0, f1 = feat[0], feat[1]
         if opt == 'ratio':
