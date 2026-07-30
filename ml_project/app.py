@@ -5,11 +5,12 @@ from sqlalchemy import create_engine
 from datetime import datetime
 import numpy as np
 from data_convert import GCMDprocessor,OPTICALprocessor,TSFE
-
+from pulearn import ElkanotoPuClassifier
 from sklearn.ensemble import RandomForestClassifier
 import glob
 import joblib
 import plotly.express as px
+import traceback
 
 
 # 連sql
@@ -170,16 +171,36 @@ try:
                             st.warning("No data, please upload first!")
                         else:
                             #訓練的資料
-                            X_train, model, model_filename = processor._retrain(df_train, MODEL_DIR)
+                            st.success("data training...")
+                            X_train_final, y_train_final, X_test_final, y_test_final = processor._preprocessing(df_train)
+                            
+                            #st.success(f'{X_train_final.columns}')
+                            base_rf = RandomForestClassifier(
+                                n_estimators=100,
+                                max_depth=12,
+                                min_samples_leaf=5,
+                                max_samples=0.8,
+                                random_state=42
+                            )
+                    
+                            pu_estimator = ElkanotoPuClassifier(
+                                estimator=base_rf,
+                                hold_out_ratio=0.2
+                            )
+                            model = pu_estimator
+                            model.fit(X_train_final, y_train_final)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
+                            joblib.dump(model, model_filename)
                             st.success(f"model training complete! saved as {model_filename}")
-                            st.info(f'this training used {len(df_train):, }data record')
+                            st.info(f'this training used {len(df_train) }data record')
                         #====== feature importance
                         st.markdown("-----")
                         st.subheader("Feature Importance Analysis")
 
                         importance_df = pd.DataFrame({
-                            'Feature': X_train.columns,
-                            'Importance': model.feature_importances_
+                            'Feature': X_train_final.columns,
+                            'Importance': model.estimator.feature_importances_
                         }).sort_values(by='Importance', ascending=False)
 
                         top_n = 20
@@ -201,11 +222,15 @@ try:
 
                 except Exception as ex:
                     st.error(f"traiing failed:{ex}")
+                    st.code(traceback.format_exc())
+
+
+#==================== Model Prediction
     with tab4:
         st.subheader('Inference / Prediction')
         saved_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl")), reverse=True)
         if not saved_models:
-            st.warning("NO model can be used currently")
+            st.warning("No model can be used currently")
         else:
             selected_model_path = st.selectbox('select used model', options=saved_models)
 
@@ -223,18 +248,25 @@ try:
                     pred_processor = GCMDprocessor(predict_file)
                 elif instrument_type =="Optical":
                     pred_processor = OPTICALprocessor(predict_file)
+               
+                df_test = pred_processor._parse_file() # df_test本身還含有std, air以外的data
+                #st.success(f'{df_test.columns}')
+                #看要不要出一個訊息說過濾那些數據?或是簡單點，寫 "只使用air和std的資料"
+                valid_types = ['std', 'air']
+                df_test_filtered = df_test[df_test['type'].isin(valid_types)].copy()
 
-                df_test = pred_processor._parse_file()
+                X_test = pred_processor._predict(df_test)
+               # st.success(f'{X_test.columns}')
 
                 if st.button("Contact model prediction"):
-                    probs = loaded_model.predict_proba(df_test)[:,1]
+                    probs = loaded_model.predict_proba(X_test)[:,1]
 
-                    df_test['predicted_prob'] = probs
+                    df_test_filtered['predicted_prob'] = probs
 
-                    df_test = df_test.sort_values(
+                    df_test_filtered = df_test_filtered.sort_values(
                         by="predicted_prob", ascending=False
                     ).reset_index(drop=True)
-                    st.session_state['pred_results'] = df_test.sort_values(by='predicted_prob', ascending=False).reset_index(drop=True)
+                    st.session_state['pred_results'] = df_test_filtered.sort_values(by='predicted_prob', ascending=False).reset_index(drop=True)
 
                     st.success("Prediction complete!")
 
@@ -355,3 +387,4 @@ try:
                     )
 except Exception as e:
     st.error(f'connection failed: {e}')
+    st.code(traceback.format_exc())
