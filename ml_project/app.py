@@ -11,7 +11,7 @@ import glob
 import joblib
 import plotly.express as px
 import traceback
-
+from sqlalchemy import MetaData, Table, inspect, text
 
 # 連sql
 st.title('SQL Connection test')
@@ -265,7 +265,7 @@ try:
 
                     df_test_filtered = df_test_filtered.sort_values(
                         by="predicted_prob", ascending=False
-                    ).reset_index(drop=True)
+                    ).reset_index(drop=False)
                     st.session_state['pred_results'] = df_test_filtered.sort_values(by='predicted_prob', ascending=False).reset_index(drop=True)
 
                     st.success("Prediction complete!")
@@ -354,29 +354,83 @@ try:
                         },
                         width='stretch'
                     )
+                    #================== data loading
 
-                    st.markdown('Entered table')
-                    col_db1, col_db2 = st.columns([2,1])
+                    st.markdown('Database setting')
+                    inspector = inspect(engine)
+                    existing_table = inspector.get_table_names()
 
-                    with col_db1:
-                        target_save_table =st.text_input("read into table", value=f"{default_table_name}_verified")
-                    with col_db2:
-                        st.write("")
-                        st.write("")
+                    save_mode = st.radio(
+                        "Select save mode:",
+                        options=["Append to exist tables", "Create new table"],
+                        horizontal=True
+                    ) 
+                    target_save_table = ""
+
+                    if save_mode == "Append to exist tables":
+                        if existing_table:
+                            target_save_table = st.selectbox("Please select append table", options=existing_table)
+                        else:
+                            st.warning("There is now tables in the database, pleases switch to 'Create New table'")
+                    else:
+                        col_db1, col_db2 = st.columns([2,1])
+                        with col_db1:
+                            input_table_name = st.text_input(
+                                "Please enter the new table name:",
+                                value = f"{default_table_name}_verified"
+                            )
+                            target_save_table=input_table_name.strip()
+                        if target_save_table in existing_table:
+                            st.error(f"Table `{target_save_table} exists! Please switch to append 'Current exist table'")
+
+                    #st.markdown('Entered table')
+                    #col_db1, col_db2 = st.columns([2,1])
+                    #with col_db1:
+                    #    target_save_table =st.text_input("read into table", 
+                    #                                     value=f"{default_table_name}_verified")
+                    #with col_db2:
+                    #    st.write("")
+                    #    st.write("")
 
                     if st.button('Checked!Loading data into sql database'):
-                        with st.spinner('Loading checked data into database'):
-                            try:
-                                edited_df.to_sql(
-                                    name=target_save_table,
-                                    con=engine,
-                                    if_exists='append',
-                                    index=False,
-                                )
-                                st.balloons()
-                                st.success(f"Success!")
-                            except Exception as e:
-                                st.error(f"Error:{e}")
+                        if not target_save_table:
+                            st.error("Please fill in or select current table name!")
+                        elif save_mode == "Create new table" and target_save_table in existing_table:
+                            st.error(f"Failed! can not loading dat into `{target_save_table}` exists, change name")
+                        else:
+                            with st.spinner('Loading checked data into database'):
+                                try:
+                                    time_col = "datetime"
+
+                                    if save_mode == "Append to exist tables":
+                                        existing_df = pd.read_sql(f"SELECT * FROM `{target_save_table}`", con=engine)
+                                        combined_df = pd.concat(
+                                        [existing_df, edited_df], ignore_index=True)
+
+                                        if time_col in combined_df.columns:
+                                            final_df = combined_df.drop_duplicates(subset=[time_col], keep='last')
+                                        else:
+                                            final_df = combined_df.drop_duplicates()
+
+                                        final_df.to_sql(
+                                            name=target_save_table,
+                                            con=engine,
+                                            if_exists="replace",
+                                            index=False
+                                        )
+                                    else:
+                                        final_df = edited_df
+                                        final_df.to_sql(
+                                            name=target_save_table,
+                                            con=engine,
+                                            if_exists='fail',
+                                            index=False
+                                        )
+                                    st.balloons()
+                                    st.success(f"Success!")
+                                except Exception as e:
+                                    st.error(f"Error:{e}")
+                                    st.code(traceback.format_exc())
 
                     csv_data = df_test.to_csv(index=False).encode('utf-8')
                     st.download_button(

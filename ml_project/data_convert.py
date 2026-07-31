@@ -94,7 +94,18 @@ class GCMDprocessor:
             df_mhd_flag.index = real_data_mhd.index 
 
             real_data_mhd = pd.concat([real_data_mhd, df_mhd_flag], axis=1)
-
+            real_data_mhd[['flag_ht','flag_a',  'flag', 'flag_p']] = real_data_mhd[['flag_ht','flag_a',  'flag', 'flag_p']].fillna(" ")
+            mapping={" ":0, 
+                "x":1, 
+                "*":1,
+                "F":1, 
+                "B":0, 
+                "A":0
+            }
+            real_data_mhd ["flag_ht_encod"] = real_data_mhd ["flag_ht"].map(mapping)
+            real_data_mhd ["flag_a_encod"] = real_data_mhd ["flag_a"].map(mapping)
+            real_data_mhd ["flag_label"] = ((real_data_mhd ["flag_ht_encod"]==1) | (real_data_mhd ["flag_a_encod"]==1)).astype(int)
+            real_data_mhd=real_data_mhd.drop(columns=["flag_a_encod", "flag_ht_encod"])
             self.df = self._process_datetime(real_data_mhd)
         #感覺這邊應該順便作時間處裡? 設datetime為index
             return self.df
@@ -118,9 +129,12 @@ class GCMDprocessor:
         return df 
     
     def _preprocessing(self, df):
-        target = 'label_c_nan'
+        target = 'flag_label' #這邊改成 label 1
+
+        #df[] = df[].fillna(" ")
         #建立isc_nan label
-        df['label_c_nan'] = df['C'].isna().astype(int)
+        #df[target] = df['C'].isna().astype(int)
+        #df['label_c_nan'] = df['C'].isna().astype(int)
         #只取用type = air 或是std的
         df = df[((df['type'] == 'air')|(df['type']=='std'))].copy()
        # print("df passed 1 step!")

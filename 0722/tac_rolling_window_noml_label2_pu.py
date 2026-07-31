@@ -20,7 +20,11 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from feature_eng import TSFE
 from function import get_best_threshold, get_data_by_year, optiacal_add_columns
 
-parquet_filename ='../data/processed/tac_co2_processed_v1.parquet'
+from pulearn import ElkanotoPuClassifier
+from sklearn.ensemble import RandomForestClassifier
+
+#======================
+parquet_filename ="../data/processed/tac_co2_formatted_v2_label2.parquet"
 #mlflow.set_tracking_uri(
  #   "http://127.0.0.1:5000"
 #)
@@ -113,7 +117,7 @@ feature_ml = ['time_since_switch',
 
 years_df = pd.read_parquet(parquet_filename, columns=['year'])
 years = years_df['year'].unique()
-years =years_df.loc[years_df['year'] != 2025, 'year'].unique()
+years =years_df.loc[~years_df['year'].isin([2025,2012]), 'year'].unique()
 print(years)
 tsfe = TSFE(feature_cols=feature_cols, feature_config=feature_config)
 #===
@@ -124,20 +128,20 @@ print("Years begin from", years.min(), "to", years.max())
 tsfe = TSFE(feature_cols=feature_cols, feature_config=feature_config)
 
 #======
-pipe_rnd = Pipeline([
-    #('scl', StandardScaler()),
-    ('clf', RandomForestClassifier())
-])
-param_grid = {
-    'clf__n_estimators': [50],
-    'clf__max_depth': [6],
-    'clf__min_samples_leaf':[50],
-    'clf__max_samples':[0.2, 0.5],
-    'clf__random_state':[42],
-    'clf__max_features':['sqrt'],
-    'clf__n_jobs':[-1],
-    'clf__class_weight':['balanced']
-}
+#pipe_rnd = Pipeline([
+   # #('scl', StandardScaler()),
+   # ('clf', RandomForestClassifier())
+#])
+#param_grid = {
+ #   'clf__n_estimators': [50],
+ #   'clf__max_depth': [6],
+  #  'clf__min_samples_leaf':[50],
+ #   'clf__max_samples':[0.2, 0.5],
+  #  'clf__random_state':[42],
+ #   'clf__max_features':['sqrt'],
+ #   'clf__n_jobs':[1],
+ #  'clf__class_weight':['balanced']
+#}
 
 
 window = 2
@@ -147,7 +151,7 @@ importance_dict = {}
 test_importance_dict = {}
 
 
-name = "0721_v1_window_1_all"
+name = "0730_v1_window_1_all"
 
 
 for start_year in years:
@@ -174,9 +178,9 @@ for start_year in years:
         #data_test['datetime'] = pd.to_datetime(data_test['datetime'])
 
         X_train = data_train[feature_cols]
-        y_train = data_train['label1']
+        y_train = data_train['label2']
         X_test = data_test[feature_cols]
-        y_test = data_test['label1']
+        y_test = data_test['label2']
         # feature engineering
         X_train = tsfe.fit_transform(X_train)
         X_test = tsfe.transform(X_test)
@@ -189,61 +193,52 @@ for start_year in years:
         
         del X_train, X_test, 
         gc.collect()
-
-        X_search, _, y_search, _ = train_test_split(
-            X_train_final, y_train,
-            train_size = 30000,
-            stratify=y_train,
-            random_state=42
+    #====================== PU Learning model
+        base_rf = RandomForestClassifier(
+              n_estimators=50,
+              max_depth=6,
+              min_samples_leaf=5,
+              random_state=42
         )
-        grid = GridSearchCV(estimator=pipe_rnd, param_grid = param_grid,  scoring='average_precision', n_jobs=1, return_train_score=False, refit=True)
-        grid.fit(X_search, y_search)
 
-        del X_search, y_search
-        gc.collect()
+        pu_estimator = ElkanotoPuClassifier(
+              estimator=base_rf,
+              hold_out_ratio=0.2
+        )
 
-        best_clf = grid.best_estimator_
-        best_clf.fit(X_train_final, y_train)
+        pu_estimator.fit(X_train_final, y_train)
 
-        importance_dict[train_years[0]] = pd.Series(best_clf.named_steps['clf'].feature_importances_, index=X_train_final.columns)
+        #===========
+        underlying_rf = pu_estimator.estimator
+        importance_dict[train_years[0]] = pd.Series(
+            underlying_rf.feature_importances_,
+            index=X_train_final.columns
+        )
 
         perm_result = permutation_importance(
-            estimator=best_clf,
-            X=X_test_final,
-            y=y_test,
-            scoring = 'average_precision',
-            n_repeats=5,
-            random_state=42
+              estimator = pu_estimator,
+              X=X_test_final,
+              y=y_test,
+              scoring = 'average_precision',
+              n_repeats=5,
+              random_state=42
         )
-        test_importance_dict[test_years[0]] = pd.Series(
-            perm_result.importances_mean,
-            index=X_test_final.columns
-        )
-        #model = random_forest_model(
-        #X_train_final, y_train, X_test_final, y_test,
-        #feature_names=feature_cols,
-    # experiment_run_name=f'rolling_{start_year}_{start_year+4}', n_estimators=100, max_depth=8, n_jobs=-1,
-    # threshold=0.5,class_weight=None
-    # )
-    #====== 
-        train_f1 = f1_score(y_train, best_clf.predict(X_train_final))
-        test_f1 = f1_score(y_test, best_clf.predict(X_test_final))
-        
-        y_prob = best_clf.predict_proba(X_test_final)[:, 1]
+
+        #===================================
+        train_f1 = f1_score(y_train, pu_estimator.predict(X_train_final))
+        test_f1 = f1_score(y_test, pu_estimator.predict(X_test_final))
+
+        y_prob = pu_estimator.predict_proba(X_test_final)[:, 1]
         best_threshold, best_f1, best_prec, best_rec = get_best_threshold(y_test, y_prob)
-        y_proba_best = (y_prob >= best_threshold).astype(int)
 
         test_pr_auc = average_precision_score(y_test, y_prob)
-
 
         print(f'Test PR-AUC: {test_pr_auc:.4f}')
         print(f'Train / Test F1 Gap : {train_f1 - test_f1:.4f}')
 
-
         all_results.append({
             "Training_years": f"{start_year}_{start_year+window-1}",
             "Testing year":test_years,
-            'Best Params': str(grid.best_params_),
             'PR-AUC': round(test_pr_auc, 4),
             "Best threshold":best_threshold,
             "F1-score_test":best_f1,
@@ -257,19 +252,20 @@ for start_year in years:
         #import os, psutil
         #process = psutil.Process(os.getpid())
         #print(f"Memory Usage: {process.memory_info().rss /1024/1024:.2f }MB")
-        del  data_train, data_test, X_train_final, X_test_final, y_train, y_test, y_prob, best_clf, grid
+        del  data_train, data_test, X_train_final, X_test_final, y_train, y_test, y_prob
         gc.collect()
+
 rolling_results = pd.DataFrame(all_results)
 
 df_imp = pd.DataFrame(importance_dict)
-df_imp.to_csv('df_imp_0723.csv')
+df_imp.to_csv('df_imp_0731_label2_pu.csv')
 
 df_imp_test = pd.DataFrame(test_importance_dict)
-df_imp_test.to_csv('df_imp_test_0723.csv')
+df_imp_test.to_csv('df_imp_test_0731_label2_pu.csv')
 
 print("============ Final Results=======")
 print(rolling_results)
-rolling_results.to_csv('rolling_results_all_feature_2year_1year.csv')
+rolling_results.to_csv('rolling_results_all_feature_2year_1year_0731_label2_pu.csv')
 
 #metric_cols = ['PR-AUC',"F1-score_test", "Precision_test", "Recall_test" , 'F1 Gap (Train-Test)']
 #summary_row = {"Training_Year":"Mean +- Std", "Test Year": "-", "Best Params": "-"}
