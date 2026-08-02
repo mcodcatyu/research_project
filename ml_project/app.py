@@ -42,6 +42,7 @@ elif instrument_type=='Optical':
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
+PROTECTED_MODELs = [""] # put the protect models here
 #===============================
 #快取，連線好不會因為刷新就一直重新連
 
@@ -49,6 +50,9 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 def get_engine(url):
     return create_engine(url, connect_args={"ssl_disabled":True})
 
+def is_protected_model(filepath):
+    filename = os.path.basename(filepath)
+    return filename in PROTECTED_MODELs 
 #===========================
 
 
@@ -57,11 +61,13 @@ try:
     with engine.connect() as conn:
         st.sidebar.success('MYSQL database')
 
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ['1. upload dataset', 
          '2. preview database and tables',
          '3. Train Model',
-         '4. Predict / Inference']) #兩個分頁
+         '4. Predict / Inference',
+         '5. System Managemnet'
+         ]) #兩個分頁
  
     #================
     with tab1:
@@ -282,7 +288,7 @@ try:
                     st.sidebar.info(f"Recommend best threshold:{recommmended_thres}")
 
                     #讓使用者可以在1~0範圍滑動threshold
-                    threshold = st.sidebar.slider(
+                    threshold = st.slider(
                         "Adjust threshold",
                         min_value = 0.000,
                         max_value = 1.000,
@@ -439,6 +445,80 @@ try:
                         file_name = f"predictions_{datetime.now().strftime('%Y%m%d')}.csv",
                         mime = "text/csv"
                     )
+#=========== tab5 - Management
+    with tab5:
+        st.subheader("System Management")
+        m_col1, m_col2 = st.columns(2)
+
+        #==== delete table
+        with m_col1:
+            st.markdown('Manage Database Tables')
+
+            st.caption("Caution: Deleting a table is irreversible")
+
+            try:
+                inspector = inspect(engine)
+                all_tables = inspector.get_table_names()
+
+                if not all_tables:
+                    st.info("No tables available in the current database.")
+                else:
+                    target_del_table = st.selectbox(
+                        "Select table to DELETE",
+                        options = all_tables,
+                        key="del_table_select"
+                    )
+
+                    confirm_del_table = st.checkbox(
+                        f' confirm delete table `{target_del_table}',
+                        key = "chk_del_table"
+                    )
+
+                    if st.button("Delete Selected Table", type="primary", disabled=not confirm_del_table):
+                        with st.spinner("Deleting table..."):
+                            with engine.begin() as conn:
+                                conn.execute(text(f"DROP TABLE `{target_del_table}`"))
+                            st.success(f"Table `{target_del_table}` deleted successfully!")
+                            st.rerun()
+            except Exception as e:
+                st.error(f'connection failed: {e}')
+                st.code(traceback.format_exc())
+        #===== dele model
+        with m_col2:
+            st.markdown("Manage Models")
+            st.caption("Manage trained model files (.pkl)")
+
+            all_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl")), reverse=True)
+            if not all_models:
+                st.info("No saved Model")
+
+            else:
+                model_options = {os.path.basename(p): p for p in all_models}
+                selected_model_name = st.selectbox(
+                    "Select model to manage:",
+                    options = list(model_options.keys()),
+                    key="del_model_select"
+                )
+
+                selected_model_path = model_options[selected_model_name]
+
+                if is_protected_model(selected_model_path):
+                    st.warning("This is a System Default Model and cannot be deleted")
+                else:
+                    confirm_del_model = st.checkbox(
+                        f"Confirm to delete model `{selected_model_name}`",
+                        key="chk_del_model"
+                    )
+
+                    if st.button("Delete Selected Model", type="primary", disabled=not confirm_del_model):
+                        try:
+                            os.remove(selected_model_path)
+                            st.success(f"Model `{selected_model_name}` deleted successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f'connection failed: {e}')
+                            st.code(traceback.format_exc())
+    
 except Exception as e:
     st.error(f'connection failed: {e}')
     st.code(traceback.format_exc())
