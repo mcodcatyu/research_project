@@ -90,7 +90,7 @@ class TSFE(BaseEstimator, TransformerMixin):
         elif opt == 'multi':
             df[f'{f0}_{f1}_multi'] = df[f0]*df[f1]
         elif opt == 'per_change':
-            df[f'{f0}_{f1}_per_change'] = (df[f0]/(df[f1]+1e-7))*100
+            df[f'{f0}_{f1}_per_change'] = (df[f0]-df[f1]/(df[f1]+1e-7))*100
         elif opt == 'Z_score_res':
             df[f'{feat[0]}_{feat[3]}_zcore_res_gen'] = ((df[feat[0]]-df[feat[1]])/(df[feat[2]]+1e-7))
 

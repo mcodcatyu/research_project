@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import numpy as np
 from data_convert import GCMDprocessor,OPTICALprocessor,TSFE
 from pulearn import ElkanotoPuClassifier
@@ -14,7 +15,7 @@ import traceback
 from sqlalchemy import MetaData, Table, inspect, text
 
 # 連sql
-st.title('SQL Connection test')
+st.title('GHG Data Anomaly detection')
 #=========
 MODEL_BASE_DIR = "models"
 #========
@@ -59,7 +60,7 @@ def is_protected_model(filepath):
 try:
     engine = get_engine(DB_URL) 
     with engine.connect() as conn:
-        st.sidebar.success('MYSQL database')
+        st.sidebar.success('Database coonected')
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ['1. upload dataset', 
@@ -110,7 +111,7 @@ try:
 # Database Preview
 #===================
     with tab2:
-        st.subheader('MySQL database preview')
+        st.subheader('Database Preview')
 
         base_engine = get_engine(BASE_URL)
         with base_engine.connect() as conn:
@@ -157,11 +158,19 @@ try:
 
                 query = f"SELECT * FROM `{selected_table}` LIMIT {limit}"
                 preview_df = pd.read_sql(query, con=current_db_engine)
+
+                number_query = f"SELECT COUNT(*) FROM `{selected_table}`"
+                total_len = pd.read_sql(number_query, con=current_db_engine).iloc[0,0]
+    
+                st.write(
+                    f"Total: {total_len}"
+                )
+
                 st.dataframe(preview_df, width='stretch')
 
     with tab3:
-        st.subheader('Train model using DB Data')
-        st.write("Training model by reading the cirrent exist latest data")
+        st.subheader('Model training')
+        st.write("Train the model using the data from the database")
         with engine.connect() as conn:
             tables_df = pd.read_sql("SHOW TABLES", con=conn)
             table_list = tables_df.iloc[:, 0].tolist()
@@ -195,7 +204,8 @@ try:
                             )
                             model = pu_estimator
                             model.fit(X_train_final, y_train_final)
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            
+                            timestamp = datetime.now(ZoneInfo("Europe/London")).strftime("%Y%m%d_%H%M%S")
                             model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
                             joblib.dump(model, model_filename)
                             st.success(f"model training complete! saved as {model_filename}")
@@ -285,7 +295,7 @@ try:
                     st.header("Human - in- the loop")
 
                     recommmended_thres = 0.5 #系統預設門檻
-                    st.sidebar.info(f"Recommend best threshold:{recommmended_thres}")
+                    st.sidebar.info(f"Default Threshold:{recommmended_thres}")
 
                     #讓使用者可以在1~0範圍滑動threshold
                     threshold = st.slider(
@@ -346,17 +356,17 @@ try:
                     st.header("Human-in-te-loop")
                     st.write("View high probability data, select in the box of `human_label`:")
 
-                    df_res['human_label'] = (df_res['predicted_prob'] >= threshold).astype(int)
+                    #df_res['human_label'] = (df_res['predicted_prob'] >= threshold).astype(int)
 
                     edited_df = st.data_editor(
                         df_res,
                         column_config={
                             "predicted_prob": st.column_config.NumberColumn("Model predicted probability", format="%.4f"),
-                            "human_label":st.column_config.SelectboxColumn(
-                                "Human Label (0=normal; 1=anomaly)",
-                                options=[1,0],
-                                required=True
-                            )
+                            #"human_label":st.column_config.SelectboxColumn(
+                            #    "Human Label (0=normal; 1=anomaly)",
+                            #    options=[1,0],
+                            #    required=True
+                            #)
                         },
                         width='stretch'
                     )
@@ -389,14 +399,6 @@ try:
                         if target_save_table in existing_table:
                             st.error(f"Table `{target_save_table} exists! Please switch to append 'Current exist table'")
 
-                    #st.markdown('Entered table')
-                    #col_db1, col_db2 = st.columns([2,1])
-                    #with col_db1:
-                    #    target_save_table =st.text_input("read into table", 
-                    #                                     value=f"{default_table_name}_verified")
-                    #with col_db2:
-                    #    st.write("")
-                    #    st.write("")
 
                     if st.button('Checked!Loading data into sql database'):
                         if not target_save_table:
@@ -406,15 +408,16 @@ try:
                         else:
                             with st.spinner('Loading checked data into database'):
                                 try:
-                                    time_col = "datetime"
+                                    #time_col = ["date", "time"]
 
                                     if save_mode == "Append to exist tables":
                                         existing_df = pd.read_sql(f"SELECT * FROM `{target_save_table}`", con=engine)
+                                        edited_df = edited_df.drop(columns=['predicted_prob', 'datetime'])
                                         combined_df = pd.concat(
-                                        [existing_df, edited_df], ignore_index=True)
+                                        [existing_df, edited_df], ignore_index=False)
 
-                                        if time_col in combined_df.columns:
-                                            final_df = combined_df.drop_duplicates(subset=[time_col], keep='last')
+                                        if set(["date", "time"]).issubset(combined_df.columns):
+                                            final_df = combined_df.drop_duplicates(subset=["date", "time"], keep='last')
                                         else:
                                             final_df = combined_df.drop_duplicates()
 
