@@ -14,8 +14,10 @@ class TSFE(BaseEstimator, TransformerMixin):
         return self
     #=============
     def _fill_Nan(self, df, feature_cols):
-        df[feature_cols] = df[feature_cols].ffill().fillna(df[feature_cols].median()) # df[feature_cols].median()
+        fill_cols = [c for c in feature_cols if c!='type']
+        df[fill_cols] = df[fill_cols].ffill().fillna(df[fill_cols].median()) # df[feature_cols].median()
         return df
+    
     def _basic_feature(self, df, feature_cols):
         target_cols = ['ht', 'area', 'rt', 'start_level']
 
