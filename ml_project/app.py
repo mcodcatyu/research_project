@@ -6,14 +6,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import numpy as np
 from data_convert import GCMDprocessor,OPTICALprocessor,TSFE
-from pulearn import ElkanotoPuClassifier
+
 from sklearn.ensemble import RandomForestClassifier
 import glob
 import joblib
 import plotly.express as px
 import traceback
 from sqlalchemy import MetaData, Table, inspect, text
-
+import xgboost as xgb
 # 連sql
 st.title('GHG Data Anomaly detection')
 #=========
@@ -185,25 +185,53 @@ try:
                         if df_train.empty:
                             st.warning("No data, please upload first!")
                         else:
+                            def bagging_rf(n_bags, model, X_train_final, y_train):
+                                pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
+                                unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
+
+                                # obtain the number of positive and unlabeled data
+                                number_pos = len(pos_idx)
+
+                                rng = np.random.default_rng(42)
+
+                                for bag in range(n_bags):
+                                    sampled_pos = pos_idx
+
+                                    #select same number data of positive data from unlabeld data
+                                    sampled_unl_idx = rng.choice(
+                                        unl_idx,
+                                        size=number_pos,
+                                        replace=False
+                                    )
+
+                                    sampled_idx = np.concatenate([
+                                        pos_idx,
+                                        sampled_unl_idx
+                                    ])
+
+
+                                    rng.shuffle(sampled_idx)
+
+                                    X_pu = X_train_final.iloc[sampled_idx]
+                                    y_pu = y_train.iloc[sampled_idx]
+
+                                    model.fit(X_pu, y_pu)
+                                return model
+                                
+
                             #訓練的資料
                             st.success("data training...")
                             X_train_final, y_train_final, X_test_final, y_test_final = processor._preprocessing(df_train)
                             
                             #st.success(f'{X_train_final.columns}')
-                            base_rf = RandomForestClassifier(
-                                n_estimators=100,
-                                max_depth=12,
-                                min_samples_leaf=5,
-                                max_samples=0.8,
-                                random_state=42
+                            n_bags=30
+                            base_rf =  xgb.XGBClassifier(
+                             learning_rate=0.1, max_depth=5, n_estimators= 200,
+                            random_state=42
                             )
-                    
-                            pu_estimator = ElkanotoPuClassifier(
-                                estimator=base_rf,
-                                hold_out_ratio=0.2
-                            )
-                            model = pu_estimator
-                            model.fit(X_train_final, y_train_final)
+                            pu_clf= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
+                            model = pu_clf
+
                             
                             timestamp = datetime.now(ZoneInfo("Europe/London")).strftime("%Y%m%d_%H%M%S")
                             model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
@@ -216,7 +244,7 @@ try:
 
                         importance_df = pd.DataFrame({
                             'Feature': X_train_final.columns,
-                            'Importance': model.estimator.feature_importances_
+                            'Importance': model.feature_importances_
                         }).sort_values(by='Importance', ascending=False)
 
                         top_n = 20
@@ -277,7 +305,7 @@ try:
                 if st.button("Contact model prediction"):
                     probs = loaded_model.predict_proba(X_test)[:,1]
 
-                    df_test_filtered['predicted_prob'] = probs
+                    df_test_filtered['predicted_prob'] = pd.Series(probs, index=X_test.index)
 
                     df_test_filtered = df_test_filtered.sort_values(
                         by="predicted_prob", ascending=False
@@ -320,37 +348,91 @@ try:
                     st.markdown("--------------")
 
                     st.subheader("Data possibility distribution (Hover Original Index)")
-                    #只抽樣5000，畫plotly
-                    sample_size = min(5000, len(df_res))
-                    df_sample = df_res.sample(n=sample_size, random_state=42).copy()
-                    df_sample['data_index'] = df_sample.index
+                    df_sub = df_res.copy()
+                    date_str = df_sub['date'].astype(str).str.zfill(6)
+                    time_str = df_sub['time'].astype(str).str.zfill(6)
+
+                    df_sub.index = pd.to_datetime(date_str + time_str, format='%y%m%d%H%M%S')
+
+                    df_sub.index = pd.to_datetime(
+                        df_sub.index.astype(str).str.replace('datetime', '').str.strip()
+                    )
+                    years = df_sub.index.year.unique()
+                    df_sub['datetime'] = df_sub.index
+
+
+                    def status(row, thresh):
+                        if pd.isna(row['C']):
+                            return 'Missing (NaN)'
+                        elif row['predicted_prob'] >= thresh:
+                            return f'Anomaly (>={threshold:.3f})'
+                        else:
+                            return 'Normal'
+
+
+                    df_sub['status'] = df_sub.apply(status, axis=1, thresh=threshold)
+                    df_sub['plot_val'] = df_sub['C'].fillna(1000)
 
                     fig = px.scatter(
-                        df_sample,
-                        x='data_index',
-                        y = 'predicted_prob',
+                        df_sub,
+                        x='datetime',
+                        y='plot_val',
+                        color = 'status',
+                        symbol='status',
+                        color_discrete_map = {
+                            'Normal': '#41ad48',
+                            'Missing (NaN)':'#b5b2b2',
+                            f'Anomaly (>={threshold:.3f})':'#ffbd59'
+                        },
+                        symbol_map={
+                            'Normal':'cross',
+                            'Missing (NaN)':'diamond',
+                            f'Anomaly (>={threshold:.3f})': 'circle'
+                        },
                         hover_data = {
-                            'data_index': True,
-                            'predicted_prob':':.4f',
+                            'datetime': '|%Y-%m-%d %H:%M:%S',
+                            'C': ':.4f',
+                            'predicted_prob': ':.4f',
+                            'plot_val':False,
+                            'status': True
                         },
-
-                        labels = {
-                            'data_index': 'Data Index',
-                            'predicted_prob': 'Predicted Probability',
+                        labels={
+                            'datetime':'Year',
+                            'plot_val': 'C Concentration',
+                            'status': 'Category'
                         },
-                        title = f'Sample size {sample_size:,} Points Probability Distribution,probability > Threshold ({threshold:.3f}) potential anomaly data'
-                    )
+                        title = f'Concentration Distribution'
 
-                    fig.add_hline(
-                        y = threshold,
-                        line_dash = 'dash',
-                        line_color = 'red',
-                        annotation_text=f'Threshold = {threshold:.3f}',
-                        annotation_position='top left'
-                        
                     )
+                    fig.update_xaxes(dtick="M12", tickformat="%Y", title_text="Year")
 
-                    st.plotly_chart(fig, width='stretch')
+                    years = df_sub.index.year.unique()
+                    for year in years:
+                        start_year = df_sub[df_sub.index.year == year].index[0]
+                        fig.add_vline(x=str(start_year), 
+                                      line_width=1.5, 
+                                      line_dash="dash", 
+                                      line_color="black", 
+                                      opacity=0.5,
+                                      annotation_text= str(year),
+                                      annotation_position='bottom left',
+                                      annotation_font_size=12,
+                                      annotation_font_color='black'
+                                      )
+                    st.plotly_chart(fig, use_container_width='True')
+                    #fig.add_hline(
+                    #    y = threshold,
+                    #    line_dash = 'dash',
+                    #    line_color = 'red',
+                    #    annotation_text=f'Threshold = {threshold:.3f}',
+                    #    annotation_position='top left'
+                   #    
+                    #)
+                    #st.plotly_chart(fig, use_container_width=True)
+
+
+
+
                     # human-in-the-loop
 
                     st.header("Human-in-te-loop")
