@@ -1,12 +1,15 @@
 import os
+from sklearn.base import clone
 import streamlit as st
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import numpy as np
-from data_convert import GCMDprocessor,OPTICALprocessor,TSFE
-
+from data_convert import GCMDprocessor,TSFE
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, roc_curve, confusion_matrix, average_precision_score, precision_recall_curve
 from sklearn.ensemble import RandomForestClassifier
 import glob
 import joblib
@@ -79,9 +82,9 @@ try:
             if instrument_type == "GC-MD":
                 processor = GCMDprocessor(uploaded_file)
                 df = processor._parse_file()# 檔案進來就解析
-            else:
-                processor = OPTICALprocessor(uploaded_file)
-                df = processor._parse_file()
+            #else:
+            #    processor = OPTICALprocessor(uploaded_file)
+            #    df = processor._parse_file()
 
             # Preview
             st.write("Preview 100 :")
@@ -175,52 +178,61 @@ try:
             tables_df = pd.read_sql("SHOW TABLES", con=conn)
             table_list = tables_df.iloc[:, 0].tolist()
         train_table = st.selectbox('SELECT table:', table_list, key="train_table_input")
+        def bagging_rf(n_bags, base_model, X_train_final, y_train):
+            pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
+            unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
+            # obtain the number of positive and unlabeled data
+            number_pos = len(pos_idx)
 
-        if st.button('Restart training model'):
+            rng = np.random.default_rng(42)
+            models = []
+            for bag in range(n_bags):
+                sampled_pos = pos_idx
+
+                #select same number data of positive data from unlabeld data
+                sampled_unl_idx = rng.choice(
+                    unl_idx,
+                    size=number_pos,
+                    replace=False
+                )
+
+                sampled_idx = np.concatenate([
+                    pos_idx,
+                    sampled_unl_idx
+                ])
+
+
+                rng.shuffle(sampled_idx)
+
+                X_pu = X_train_final.iloc[sampled_idx]
+                y_pu = y_train.iloc[sampled_idx]
+                model_clone = clone(base_model)
+                model_clone.fit(X_pu, y_pu)
+                models.append(model_clone)
+            return models
+            
+        def predict_proba_pu(models, X):
+            probs = [m.predict_proba(X)[:, 1] for m in models]
+            return np.mean(probs, axis=0)
+
+        if 'evaluated' not in st.session_state:
+            st.session_state.evaluated = False
+        if 'eval_data' not in st.session_state:
+            st.session_state.eval_data = {}
+
+        if st.button('Train and Evaluate Model'):
             with st.spinner('Reading data from sql'):
                 try:
                     df_train = pd.read_sql(f"SELECT * FROM `{train_table}`", con=engine)
-                    if instrument_type == "GC-MD":
+                    if instrument_type == "GC-MD": # 
                         processor = GCMDprocessor(uploaded_file)
                         if df_train.empty:
                             st.warning("No data, please upload first!")
                         else:
-                            def bagging_rf(n_bags, model, X_train_final, y_train):
-                                pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
-                                unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
-
-                                # obtain the number of positive and unlabeled data
-                                number_pos = len(pos_idx)
-
-                                rng = np.random.default_rng(42)
-
-                                for bag in range(n_bags):
-                                    sampled_pos = pos_idx
-
-                                    #select same number data of positive data from unlabeld data
-                                    sampled_unl_idx = rng.choice(
-                                        unl_idx,
-                                        size=number_pos,
-                                        replace=False
-                                    )
-
-                                    sampled_idx = np.concatenate([
-                                        pos_idx,
-                                        sampled_unl_idx
-                                    ])
-
-
-                                    rng.shuffle(sampled_idx)
-
-                                    X_pu = X_train_final.iloc[sampled_idx]
-                                    y_pu = y_train.iloc[sampled_idx]
-
-                                    model.fit(X_pu, y_pu)
-                                return model
-                                
 
                             #訓練的資料
                             st.success("data training...")
+                            # 80% training, 20% testing
                             X_train_final, y_train_final, X_test_final, y_test_final = processor._preprocessing(df_train)
                             
                             #st.success(f'{X_train_final.columns}')
@@ -229,45 +241,118 @@ try:
                              learning_rate=0.1, max_depth=5, n_estimators= 200,
                             random_state=42
                             )
-                            pu_clf= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
-                            model = pu_clf
+                            pu_models= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
+                            model = pu_models
+                            threshold = 0.8
+                            name='XGBOOST'
+                            y_prob_pu =  predict_proba_pu(pu_models, X_test_final)
+                            y_pred_pu = (y_prob_pu >= threshold).astype(int)
 
+                            auc_pu = roc_auc_score(y_test_final, y_prob_pu)
+                            pr_auc_pu = average_precision_score(y_test_final, y_prob_pu)
                             
-                            timestamp = datetime.now(ZoneInfo("Europe/London")).strftime("%Y%m%d_%H%M%S")
-                            model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
-                            joblib.dump(model, model_filename)
-                            st.success(f"model training complete! saved as {model_filename}")
-                            st.info(f'this training used {len(df_train) }data record')
-                        #====== feature importance
-                        st.markdown("-----")
-                        st.subheader("Feature Importance Analysis")
+                            #====================_test_final)
+                            fig_cm, axes_cm = plt.subplots(figsize=(8,6))
+                            fig_roc, ax_roc = plt.subplots(figsize=(8,6))
+                            fig_prc, ax_prc = plt.subplots(figsize=(8,6))
+                            #====================
+                            fpr_pu, tpr_pu, _ = roc_curve(y_test_final, y_prob_pu)
+                            ax_roc.plot(fpr_pu, tpr_pu, linestyle='--', label=f'{name} (PU) - AUC: {auc_pu: .3f}')
 
-                        importance_df = pd.DataFrame({
-                            'Feature': X_train_final.columns,
-                            'Importance': model.feature_importances_
-                        }).sort_values(by='Importance', ascending=False)
+                            prec_pu, rec_pu, _ = precision_recall_curve(y_test_final, y_prob_pu)
+                            ax_prc.plot(rec_pu, prec_pu, linestyle='--', label=f'{name} (PU) - PU-AUC:{pr_auc_pu: .3f}')
 
-                        top_n = 20
-                        top_importance = importance_df.head(top_n).sort_values(by='Importance', ascending=True)
+                            cm = confusion_matrix(y_test_final, y_pred_pu)
+                            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes_cm, cbar=False, xticklabels=['Pred:0','Pred:1'], yticklabels=['True:0', 'True:1'])
+                            axes_cm.set_title(f"{name} (PU) Confusion matrix")
+                            axes_cm.set_xlabel("Predicted Label")
+                            axes_cm.set_ylabel("True Label")
 
-                        fig_imp = px.bar(
-                            top_importance,
-                            x='Importance',
-                            y='Feature',
-                            title=f"Top {top_n} Imortant Features",
-                            labels={'Importance':'Feature Importance Score', 'Feature':'Feature Name'},
-                            text_auto='.4f'
-                        )
-                        fig_imp.update_layout(height=500 + (top_n*20))
+                            ax_roc.plot([0, 1], [0,1], 'k--', alpha=0.5)
+                            ax_roc.set_title("ROC CURVE: Standard vs PU learning")
+                            ax_roc.set_xlabel("False Positive Rate")
+                            ax_roc.set_ylabel("True Positive Rate")
+                            ax_roc.legend()
 
-                        st.plotly_chart(fig_imp, width='stretch')
-                        with st.expander("View all Feature Importance (top 20)"):
-                            st.dataframe(importance_df.reset_index(drop=True), width='stretch')
 
+                            fig_roc.tight_layout()
+                            
+
+
+                            baseline_pr = np.sum(y_test_final == 1) / len(y_test_final)
+
+                            ax_prc.axhline(y=baseline_pr, color='k', linestyle='--', alpha=0.5, label=f'Baseline ({baseline_pr:.3f})')
+                            ax_prc.set_title("Precision-Recall Curve: Standard vs PU Learning")
+                            ax_prc.set_xlabel("Recall")
+                            ax_prc.set_ylabel("Precision")
+                            ax_prc.legend()
+
+                            st.session_state.eval_data={
+                                'fig_cm':fig_cm,
+                                'fig_roc':fig_roc,
+                                'fig_prc':fig_prc,
+                                'X_train_final':X_train_final,
+                                'y_train_final': y_train_final,
+                                'X_test_final': X_test_final,
+                                'y_test_final': y_test_final,
+                                'df_train_len':len(df_train),
+                                'base_rf': base_rf,
+                                'n_bags':n_bags
+                            }
+                            st.session_state.evaluated = True
                 except Exception as ex:
-                    st.error(f"traiing failed:{ex}")
-                    st.code(traceback.format_exc())
+                                    st.error(f"traiing failed:{ex}")
+                                    st.code(traceback.format_exc())
+        if st.session_state.evaluated:
+            eval_data = st.session_state.eval_data
+                            #=======================
+            col1, col2, col3 = st.columns(3)
 
+            with col1:
+                st.subheader("Confusion Matrix")
+                st.pyplot(eval_data['fig_cm'], use_container_width=True)
+            with col2:
+                st.subheader("ROC Curve")
+                st.pyplot(eval_data['fig_roc'], use_container_width=True)
+            with col3:
+                st.subheader("PR Curve")
+                st.pyplot(eval_data['fig_prc'], use_container_width=True)
+            st.markdown("---")
+            if st.button('Training Final Model'):
+                with st.spinner('Training final model on full dataset'):
+                    X_train_all= pd.concat([eval_data['X_train_final'], eval_data['X_test_final']], axis=0).reset_index(drop=True)
+                    y_train_all = pd.concat([eval_data['y_train_final'], eval_data['y_test_final']], axis=0).reset_index(drop=True)
+                    final_models =  bagging_rf(eval_data['n_bags'], eval_data['base_rf'] , X_train_all, y_train_all)
+ 
+                    timestamp = datetime.now(ZoneInfo("Europe/London")).strftime("%Y%m%d_%H%M%S")
+                    model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
+                    joblib.dump(final_models, model_filename)
+                    st.success(f"model training complete! saved as {model_filename}")
+                    st.info(f'this training used {eval_data["df_train_len"]}data record')
+                        #====== feature importance
+                    st.markdown("-----")
+                    st.subheader("Feature Importance Analysis")
+                    avg_imp = np.mean([m.feature_importances_ for m in final_models], axis=0)
+                    df_imp = pd.DataFrame({
+                        'Feature': X_train_all.columns,
+                        'Importance': avg_imp
+                    })
+                    df_imp_chart = df_imp.sort_values(by='Importance', ascending=True)
+
+                    fig_imp = px.bar(
+                        df_imp_chart,
+                        x='Importance',
+                        y='Feature',
+                        title=f"Feature Imortantance",
+                        labels={'Importance':'Feature Importance Score', 'Feature':'Feature Name'},
+                        text_auto='.4f'
+                    )
+                    fig_imp.update_layout(height=500 + (30*30))
+
+                    st.plotly_chart(fig_imp, use_container_width=True)
+                    with st.expander("View all Feature Importance"):
+                        df_imp_table = df_imp.sort_values(by='Importance',ascending=False).reset_index(drop=True)
+                        st.dataframe(df_imp_table,  use_container_width=True)
 
 #==================== Model Prediction
     with tab4:
@@ -290,8 +375,8 @@ try:
             if predict_file is not None:
                 if instrument_type == "GC-MD":
                     pred_processor = GCMDprocessor(predict_file)
-                elif instrument_type =="Optical":
-                    pred_processor = OPTICALprocessor(predict_file)
+                #elif instrument_type =="Optical":
+                #    pred_processor = OPTICALprocessor(predict_file)
                
                 df_test = pred_processor._parse_file() # df_test本身還含有std, air以外的data
                 #st.success(f'{df_test.columns}')
@@ -398,7 +483,7 @@ try:
                         },
                         labels={
                             'datetime':'Year',
-                            'plot_val': 'C Concentration',
+                            'plot_val': 'Concentration',
                             'status': 'Category'
                         },
                         title = f'Concentration Distribution'
