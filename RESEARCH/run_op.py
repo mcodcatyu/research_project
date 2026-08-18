@@ -9,7 +9,8 @@ from datetime import datetime
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=PerformanceWarning)
 logging.getLogger("mlgflow.sklearn").setLevel(logging.ERROR)
-
+from joblib.externals.loky import get_reusable_executor
+import gc
 #====================
 import numpy as np
 import pandas as pd
@@ -57,37 +58,13 @@ tsfe = TSFE(feature_cols=feature_cols)
 X_train_final = tsfe.transform(X_train)
 
 X_test_final = tsfe.transform(X_test)
-feature_ml = ['CH4_rt_to_last_air_ratio',
- 'CH4_ht_roll_std_24h_CH4_ht_roll_mean_24h_ratio',
- 'CH4_area_roll_std_24h_CH4_area_roll_mean_24h_ratio',
- 'CH4_end_time',
- 'CH4_w_roll_std_24h_CH4_w_roll_mean_24h_ratio',
- 'CH4_ht_to_last_std_ratio',
- 'CH4_area_roll_std_3h_CH4_area_roll_mean_3h_ratio',
- 'CH4_w_residual_6h',
- 'CH4_ht_roll_std_3h_CH4_ht_roll_mean_3h_ratio',
- 'CH4_rt_pflow_ratio',
- 'level_area_ratio',
- 'CH4_area_to_last_air_ratio',
- 'CH4_w_residual_3h',
- 'CH4_w_robust_residual_3h',
- 'CH4_w_robust_residual_6h',
- 'CH4_area_robust_residual_1h',
- 'CH4_area_residual_1h',
- 'CH4_area_to_last_std_ratio',
- 'CH4_start_level_to_last_std_ratio',
- 'CH4_w_diff_1',
- 'CH4_w_roll_std_3h_CH4_w_roll_mean_3h_ratio',
- 'CH4_area_diff_1',
- 'CH4_w_residual_24h',
- 'CH4_ht_pflow_ratio',
- 'CH4_rt_to_last_std_ratio',
- 'CH4_start_time',
- 'CH4_ht_residual_1h',
- 'CH4_w',
- 'CH4_ht_diff_1',
- 'CH4_w_residual_1h']
-
+feature_ml =  ['CH4_ht_roll_std_24h_CH4_ht_roll_mean_24h_ratio', 'CH4_rt_to_last_air_ratio', 
+               'CH4_area_roll_std_24h_CH4_area_roll_mean_24h_ratio', 'duration_rt_ratio', 
+               'rt_position', 'CH4_ht_to_last_std_ratio', 'CH4_area_roll_std_3h_CH4_area_roll_mean_3h_ratio', 
+               'CH4_w_roll_std_24h_CH4_w_roll_mean_24h_ratio', 'CH4_ht_roll_std_3h_CH4_ht_roll_mean_3h_ratio', 
+               'CH4_end_time', 'CH4_w_residual_6h', 'CH4_rt_pflow_ratio', 'level_area_ratio', 'CH4_w_robust_residual_6h',
+                 'CH4_area_robust_residual_1h', 'CH4_area_residual_1h', 'CH4_w_roll_std_3h_CH4_w_roll_mean_3h_ratio', 
+                 'CH4_area_to_last_std_ratio', 'CH4_start_level_to_last_std_ratio', 'CH4_area_diff_1']
 
 
 X_train_final  = X_train_final [feature_ml]
@@ -122,7 +99,7 @@ def train_one_bag(base_model, X, y, pos_idx, unl_idx, number_pos, seed):
 
 
 
-def bagging_rf(n_bags, base_model, X, y, n_jobs=-1, random_state=42):
+def bagging_rf(n_bags, base_model, X, y, n_jobs=2, random_state=42):
     pos_idx = np.flatnonzero(y == 1)
     unl_idx = np.flatnonzero(y == 0)
 
@@ -139,9 +116,9 @@ def bagging_rf(n_bags, base_model, X, y, n_jobs=-1, random_state=42):
     )
     return models
 
-def predict_proba_pu (models, X, n_jobs=-1):
-    probs = Parallel(n_jobs=n_jobs)(delayed(m.predict_proba)(X) for m in models)
-    return np.mean([p[:, 1] for p in probs], axis=0)
+def predict_proba_pu (models, X):
+    probs = [m.predict_proba(X)[:,1] for m in models]
+    return np.mean(probs, axis=0)
 
 
 def get_best_threshold(y_true, y_probs):
@@ -251,16 +228,19 @@ def pu_model (trial, model_name, X_tr_all, y_tr_all):
         y_tr, y_val = y_tr_all[tr_idx], y_tr_all[val_idx]
 
         clf = create_base_model(model_name, params)
-        pu_models = bagging_rf(SEARCH_N_BAGS, clf, X_tr, y_tr, n_jobs=-1)
+        pu_models = bagging_rf(SEARCH_N_BAGS, clf, X_tr, y_tr, n_jobs=2)
 
 
-        y_prob_val =predict_proba_pu(pu_models, X_val, n_jobs=-1)
+        y_prob_val =predict_proba_pu(pu_models, X_val)
 
         b_thresh, b_f1 = get_best_threshold(y_val, y_prob_val)
 
         fold_f1s.append(b_f1)
         fold_thresh.append(b_thresh)
     trial.set_user_attr('best_thresh', float(np.mean(fold_thresh)))
+
+    gc.collect()
+    get_reusable_executor().shutdown(wait=False)
     return float(np.mean(fold_f1s))
 
 
@@ -335,7 +315,7 @@ for name in model_names:
 
     
 
-    y_prob_pu = predict_proba_pu(final_pu_models, X_te_np, n_jobs=-1)
+    y_prob_pu = predict_proba_pu(final_pu_models, X_te_np)
     y_pred_pu = (y_prob_pu >= best_thresh_pu).astype(int)
 
     tn_pu, fp_pu, fn_pu, tp_pu = confusion_matrix(y_test, y_pred_pu ).ravel()
