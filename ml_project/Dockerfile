@@ -4,6 +4,10 @@ FROM python:3.10-slim
 #設定容器內的工作目錄
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 #先複製requirements.txt
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

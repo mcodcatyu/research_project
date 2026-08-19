@@ -17,6 +17,7 @@ import plotly.express as px
 import traceback
 from sqlalchemy import MetaData, Table, inspect, text
 import xgboost as xgb
+import lightgbm as lgb
 # 連sql
 st.title('GHG Data Anomaly detection')
 #=========
@@ -237,10 +238,11 @@ try:
                             
                             #st.success(f'{X_train_final.columns}')
                             n_bags=30
-                            base_rf =  xgb.XGBClassifier(
-                             learning_rate=0.1, max_depth=5, n_estimators= 200,
-                            random_state=42
-                            )
+                            base_rf = lgb.LGBMClassifier(learning_rate=0.05, n_estimators=100, num_leaves=50, random_state = 42, n_jobs=1)
+                            #base_rf =  xgb.XGBClassifier(
+                             #learning_rate=0.1, max_depth=5, n_estimators= 200,
+                            #random_state=42
+                            #)
                             pu_models= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
                             model = pu_models
                             threshold = 0.8
@@ -333,9 +335,10 @@ try:
                     st.markdown("-----")
                     st.subheader("Feature Importance Analysis")
                     avg_imp = np.mean([m.feature_importances_ for m in final_models], axis=0)
+                    avg_imp_pct = (avg_imp / np.sum(avg_imp)) * 100
                     df_imp = pd.DataFrame({
                         'Feature': X_train_all.columns,
-                        'Importance': avg_imp
+                        'Importance': avg_imp_pct
                     })
                     df_imp_chart = df_imp.sort_values(by='Importance', ascending=True)
 
@@ -343,9 +346,9 @@ try:
                         df_imp_chart,
                         x='Importance',
                         y='Feature',
-                        title=f"Feature Imortantance",
-                        labels={'Importance':'Feature Importance Score', 'Feature':'Feature Name'},
-                        text_auto='.4f'
+                        title=f"Feature Imortantance(%)",
+                        labels={'Importance':'Feature Importance (%)', 'Feature':'Feature Name'},
+                        text_auto='.2f'
                     )
                     fig_imp.update_layout(height=500 + (30*30))
 
@@ -384,18 +387,20 @@ try:
                 valid_types = ['std', 'air']
                 df_test_filtered = df_test[df_test['type'].isin(valid_types)].copy()
 
-                X_test = pred_processor._predict(df_test)
+                X_test = pred_processor._predict(df_test_filtered)
                # st.success(f'{X_test.columns}')
 
                 if st.button("Contact model prediction"):
-                    probs = loaded_model.predict_proba(X_test)[:,1]
+                    all_probs = [m.predict_proba(X_test)[:, 1] for m in loaded_model]
+                    probs = np.mean(all_probs, axis=0)
+
 
                     df_test_filtered['predicted_prob'] = pd.Series(probs, index=X_test.index)
+                    df_results = df_test_filtered.sort_values(
+                        by='predicted_prob', ascending=False
+                    ).reset_index(drop=True)
 
-                    df_test_filtered = df_test_filtered.sort_values(
-                        by="predicted_prob", ascending=False
-                    ).reset_index(drop=False)
-                    st.session_state['pred_results'] = df_test_filtered.sort_values(by='predicted_prob', ascending=False).reset_index(drop=True)
+                    st.session_state['pred_results'] = df_results
 
                     st.success("Prediction complete!")
 
@@ -405,7 +410,7 @@ try:
 
                     st.markdown("-----")
 
-                    st.header("Human - in- the loop")
+                    #st.header("Human - in- the loop")
 
                     recommmended_thres = 0.5 #系統預設門檻
                     st.sidebar.info(f"Default Threshold:{recommmended_thres}")
@@ -579,7 +584,10 @@ try:
 
                                     if save_mode == "Append to exist tables":
                                         existing_df = pd.read_sql(f"SELECT * FROM `{target_save_table}`", con=engine)
-                                        edited_df = edited_df.drop(columns=['predicted_prob', 'datetime'])
+                                        cols_to_drop = ['predicted_prob', 'datetime']
+                            
+                                        edited_df = edited_df.drop(columns=cols_to_drop, errors='ignore')
+
                                         combined_df = pd.concat(
                                         [existing_df, edited_df], ignore_index=False)
 

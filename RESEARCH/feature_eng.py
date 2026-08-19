@@ -15,79 +15,68 @@ class TSFE:
                 type_col(string): 樣本類型
         """
         self.feature_cols = feature_cols
-        self.feature_config = {
-            'diff':{'cols': ['CH4_area', 
-                            'CH4_ht','CH4_w' , 'CH4_rt' #'tmod',#'CH4_end_time','CH4_start_time',,'CH4_rt'
-                        ], 'periods':[1, 3, 6, 72]},
+        self.feature_config ={
+    'diff':{'cols': ['CH4_area', 
+                    'CH4_ht','CH4_w' , 'CH4_rt' #'tmod',#'CH4_end_time','CH4_start_time',,'CH4_rt'
+                ], 'periods':[1]},
 
-            'lag':{'cols':['CH4_area', 'CH4_rt',  'CH4_ht', #'tmod',  'psamp','pamb','tamb',,'CH4_skew'
-                        'pflow',
-                    'CH4_w'], 'periods':[1, 3, 6, 72]},
+    'lag':{'cols':['CH4_area', 'CH4_rt',  'CH4_ht', #'tmod',  'psamp','pamb','tamb',,'CH4_skew'
+                'pflow',
+              'CH4_w'], 'periods':[1]},
 
-            'diff_cross':{'cols':[['CH4_ht', 'CH4_ht_lag_72'],
-                                ['CH4_area', 'CH4_area_lag_72'],
-                                ['CH4_end_time', 'CH4_start_time'],
-                            # ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_7h'],
-                                ['CH4_end_level', 'CH4_start_level'],
-                                ['CH4_rt', 'pflow'],
-                                #['CH4_ht', 'CH4_ht_lag_72'],['CH4_w', 'CH4_w_lag_72'],
-                                #['pflow', 'pflow_lag_1'],['CH4_skew','CH4_skew_lag_1']
-                                ]}, 
+    'diff_cross':{'cols':[#['CH4_ht', 'CH4_ht_lag_72'],
+                          #['CH4_area', 'CH4_area_lag_72'],
+                          ['CH4_end_time', 'CH4_start_time'],
+                      # ['CH4_w_roll_mean_2h', 'CH4_w_roll_mean_7h'],
+                        ['CH4_end_level', 'CH4_start_level'],
+                        ['CH4_rt', 'pflow'],
+                        #['CH4_ht', 'CH4_ht_lag_72'],['CH4_w', 'CH4_w_lag_72'],
+                        #['pflow', 'pflow_lag_1'],['CH4_skew','CH4_skew_lag_1']
+                        ]}, 
 
-            'roll_std':{'cols': ['CH4_w', 'CH4_ht','CH4_area', 'CH4_end_time_CH4_start_time_diff_cross'], 'period':['1h','3h','6h', '24h', '3D', '7D']},
+    'roll_std':{'cols': ['CH4_w', 'CH4_ht','CH4_area', 'CH4_end_time_CH4_start_time_diff_cross'], 'period':['1h','3h','6h', '24h']},
 
-            'roll_mean_percent_res':{'cols':['CH4_rt' ,
-                                    'CH4_w', 'CH4_ht','CH4_area',], 'period': ['1h','3h','6h','24h', '3D', '7D']},
-
-
-
-            #'log':{'cols':['last_std_CH4_ht','last_air_CH4_ht'
-                        #'CH4_end_time', 
-            #              ]},
-            'roll_median':{'cols':['CH4_rt' ,
-                                    'CH4_w', 'CH4_ht','CH4_area', 'pflow','CH4_area_lag_72','CH4_ht_lag_72'], 'period':['1h','3h','6h', '24h', '3D', '7D']},
-            'roll_mad':{'cols':['CH4_rt' ,
-                                    'CH4_w', 'CH4_ht','CH4_area', 'pflow'], 'period':['1h','3h','6h', '24h', '3D', '7D']},
-            'roll_median_percent_res':{'cols':['CH4_rt' ,
-                                    'CH4_w', 'CH4_ht','CH4_area','pflow','CH4_area_lag_72','CH4_ht_lag_72'],
-                                    'period':['1h','3h','6h', '24h', '3D', '7D']},
-
-        # 'multi':{'cols':[['CH4_w', 'CH4_ht'],['CH4_area', 'pflow']]},
-
-            'ratio':{'cols':[   ['CH4_skew','CH4_w'],
-                                ['CH4_ht', 'pflow'],
-                                ['CH4_ht', 'CH4_w'],
-                                ['CH4_area', 'pflow'],
-                                ['CH4_rt', 'pflow'],
-                                ['CH4_ht', 'CH4_area'],
-                                ['CH4_w', 'CH4_end_time_CH4_start_time_diff_cross'],
-                            # ['CH4_rt', 'CH4_end_time_CH4_start_time_diff_cross'],
-
-                            # ['CH4_ht', 'last_air_ht'],
-                                #['CH4_w_roll_std_2h', 'CH4_w_roll_std_1D'],
-                            
-                                ['CH4_start_level', 'CH4_end_level'],
-                        
-                                ['CH4_w_roll_std_3h', 'CH4_w_roll_mean_3h'], ['CH4_ht_roll_std_3h', 'CH4_ht_roll_mean_3h'],['CH4_area_roll_std_3h', 'CH4_area_roll_mean_3h'],
-                                ['CH4_w_roll_std_24h', 'CH4_w_roll_mean_24h'], ['CH4_ht_roll_std_24h', 'CH4_ht_roll_mean_24h'],['CH4_area_roll_std_24h', 'CH4_area_roll_mean_24h'],
-                                #['CH4_w_roll_std_6h', 'CH4_w_roll_mean_6h'], ['CH4_ht_roll_std_6h', 'CH4_ht_roll_mean_6h'],['CH4_area_roll_std_6h', 'CH4_area_roll_mean_6h'],
-                                #['CH4_ht_roll_std_24h', 'CH4_ht_roll_mean_24h']
-                            # ['CH4_w_roll_std_7h', 'CH4_w_roll_mean_7h'],['CH4_ht_roll_std_7h', 'CH4_ht_roll_mean_7h'],
-                                #['CH4_w_roll_std_2D', 'CH4_w_roll_mean_2D'],['CH4_ht_roll_std_2D', 'CH4_ht_roll_mean_2D'],
-                                #['CH4_rt', 'last_std_rt'],
-                                
-                            #['CH4_end_time', 'CH4_start_time'], ['CH4_area', 'pflow'],  ['CH4_skew', 'CH4_w'],['CH4_w', 'CH4_ht']
-                            ]}, 
+    'roll_mean_percent_res':{'cols':['CH4_rt' ,
+                             'CH4_w', 'CH4_ht','CH4_area',], 'period': ['1h','3h','6h','24h']},
 
 
-            'per_change':{'cols':[['CH4_ht_diff_1', 'CH4_ht_lag_1']]},
-            'relative_per': {'cols': ['CH4_w', 'CH4_ht'], 'period':['2h','7h']},
-            'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_3h', 'CH4_w_roll_std_3h', '3h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
-                                ]},
-            'per_rank': {'cols': ['CH4_w', 'CH4_skew','CH4_ht'], 'period':['7D']},
+
+    #'log':{'cols':['last_std_CH4_ht','last_air_CH4_ht'
+                   #'CH4_end_time', 
+     #              ]},
+     'roll_median':{'cols':['CH4_rt' ,
+                             'CH4_w', 'CH4_ht','CH4_area', 'pflow'], 'period':['1h','3h','6h', '24h']},
+     'roll_mad':{'cols':['CH4_rt' ,
+                             'CH4_w', 'CH4_ht','CH4_area', 'pflow'], 'period':['1h','3h','6h', '24h']},
+     'roll_median_percent_res':{'cols':['CH4_rt' ,
+                             'CH4_w', 'CH4_ht','CH4_area','pflow'],
+                              'period':['1h','3h','6h', '24h']},
+
+   # 'multi':{'cols':[['CH4_w', 'CH4_ht'],['CH4_area', 'pflow']]},
+
+    'ratio':{'cols':[   ['CH4_skew','CH4_w'],
+                        ['CH4_ht', 'pflow'],
+                        ['CH4_ht', 'CH4_w'],
+                        ['CH4_area', 'pflow'],
+                        ['CH4_rt', 'pflow'],
+                        ['CH4_ht', 'CH4_area'],
+                        ['CH4_w', 'CH4_end_time_CH4_start_time_diff_cross'],
+                      
+                        ['CH4_start_level', 'CH4_end_level'],
+                  
+                        ['CH4_w_roll_std_3h', 'CH4_w_roll_mean_3h'], ['CH4_ht_roll_std_3h', 'CH4_ht_roll_mean_3h'],['CH4_area_roll_std_3h', 'CH4_area_roll_mean_3h'],
+                        ['CH4_w_roll_std_24h', 'CH4_w_roll_mean_24h'], ['CH4_ht_roll_std_24h', 'CH4_ht_roll_mean_24h'],['CH4_area_roll_std_24h', 'CH4_area_roll_mean_24h'],
+                       ]}, 
 
 
-        }
+    'per_change':{'cols':[['CH4_ht_diff_1', 'CH4_ht_lag_1']]},
+    #'relative_per': {'cols': ['CH4_w', 'CH4_ht'], 'period':['2h','7h']},
+    #'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_3h', 'CH4_w_roll_std_3h', '3h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
+                           #]},
+    #'per_rank': {'cols': ['CH4_w', 'CH4_skew','CH4_ht'], 'period':['7D']},
+
+
+    }
         self.type_col = type_col
     #==========
     #=============
