@@ -14,22 +14,28 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import joblib
 import os
-# Model from scikit-learn
 
+# Model
 from sklearn.ensemble import RandomForestClassifier
-
 import  xgboost as xgb
 import lightgbm as lgb
 from sklearn.base import clone
+
 # Model Evaluations
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, roc_curve, confusion_matrix, average_precision_score, precision_recall_curve
 from sklearn.model_selection import  TimeSeriesSplit,  GridSearchCV, train_test_split
-from sklearn.metrics import PrecisionRecallDisplay
+
+#=======================================================================================
+# record:
+# rf best: Best parameter combination: {'max_depth': None, 'min_samples_leaf': 2, 'min_samples_split': 5, 'n_estimators': 200}
+# XGBOOST : Best parameter combination: {'learning_rate': 0.1, 'max_depth': 7, 'n_estimators': 200, 'subsample': 1.0}
+# LighBGM : Best parameter combination: {'learning_rate': 0.05, 'n_estimators': 100, 'num_leaves': 50}
+#========================================================================================
 
 # create folder "img" to save figures
 os.makedirs('img', exist_ok=True) 
 
-# data loading
+# 讀取資料
 df = pd.read_csv('../data/processed/mhd_ch4_cnan_v1.csv', index_col= 'datetime')
 df = df.drop(df[df['year']==2026].index)
 
@@ -41,9 +47,9 @@ feature_cols= [
     'CH4_ht', 'CH4_area', 'CH4_skew', 'CH4_start_time', 'CH4_end_time',
     'CH4_start_level', 'CH4_end_level', #'duration', 
     'is_air','is_std',
-    #'previous_type_std', 'previous_type_air','next_type_std', 'next_type_air', 
     ]
-#
+
+
 # only select the feature include in feature_cols
 X = df[feature_cols]
 y = df[target]
@@ -55,7 +61,7 @@ X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
 y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
 
-print('Feature eng... it may take about 10 mins')
+print('Feature Eng... ')
 tscv = TimeSeriesSplit(n_splits=5) 
 
 tsfe = TSFE(feature_cols=feature_cols)
@@ -110,34 +116,42 @@ def bagging_rf(n_bags, base_model, X_train_final, y_train):
 
     Returns
     """
+    #儲存所有標籤為1的資料索引
     pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
+    #儲存所有標籤為0的資料索引(這邊我們將其視為所謂的unlabeled)
     unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
 
     # obtain the number of positive and unlabeled data
+    # 顯示unlabeled 和 positive 的數量
     print(f"Number of Bag: {n_bags}")
     number_pos = len(pos_idx)
     print("Positive:", len(pos_idx))
     print("Unlabeled:", len(unl_idx))
 
+    # 固定隨機樹種子(42)，確保每次 pu nagging 抽樣與打亂結果可重複
     rng = np.random.default_rng(42)
 
     models = []
 
     for bag in range(n_bags):
+        """
+            Args:
+            Returns:
+        """
 
-        #select same number data of positive data from unlabeld data
+        #抽取與positive同數量的unlabeled data
         sampled_unl_idx = rng.choice(
             unl_idx,
             size=number_pos,
             replace=False
         )
-
+        # 組合索引(前半是positive, 後半是unlabeled)
         sampled_idx = np.concatenate([
             pos_idx,
             sampled_unl_idx
         ])
 
-        #打亂順序
+        #隨機打亂順序，避免前段都是positive,後段都是unlabeled
         rng.shuffle(sampled_idx)
 
         X_pu = X_train_final.iloc[sampled_idx]
@@ -389,7 +403,3 @@ df_metrics.to_csv(f"img/PU_vs_Standard_Metrics_{timestamp}.csv", index=False)
 #===========
 
 
-# record:
-# rf best: Best parameter combination: {'max_depth': None, 'min_samples_leaf': 2, 'min_samples_split': 5, 'n_estimators': 200}
-# XGBOOST : Best parameter combination: {'learning_rate': 0.1, 'max_depth': 7, 'n_estimators': 200, 'subsample': 1.0}
-# LighBGM : Best parameter combination: {'learning_rate': 0.05, 'n_estimators': 100, 'num_leaves': 50}

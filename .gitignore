@@ -67,3 +67,20 @@ models/
 *.png
 .vscode/
 *.json
+
+#===== folder
+0722/
+0724/
+0729/
+0731/
+data/
+gcmd_pu/
+mhd/
+mlartifacts/
+notebooks/
+others/
+project_src/
+py/
+tac/
+tac_co2/
+*db

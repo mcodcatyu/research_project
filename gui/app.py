@@ -1,4 +1,9 @@
 import os
+
+import warnings
+from pandas.errors import PerformanceWarning
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=PerformanceWarning)
 from sklearn.base import clone
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -18,7 +23,16 @@ import traceback
 from sqlalchemy import MetaData, Table, inspect, text
 import xgboost as xgb
 import lightgbm as lgb
-# 連sql
+
+#==============================Workflow=====================================================
+# tab1: Dataupload( only can upload data file the format is generated from GCWerks software)
+
+# tab2: Preview database and tables (selec the database and the table you'd like to check)
+
+#
+
+#====================================================================================
+# SQL connection
 st.title('GHG Data Anomaly detection')
 #=========
 MODEL_BASE_DIR = "models"
@@ -28,7 +42,7 @@ BASE_URL = os.getenv(
     "mysql+pymysql://root:rootpassword@db:3306/",
 )
 
-# 連database
+# Database Connection
 DB_URL = os.getenv(
     'DATABASE_URL',
     "mysql+pymysql://root:rootpassword@db:3306/mydatabase",
@@ -47,9 +61,9 @@ elif instrument_type=='Optical':
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-PROTECTED_MODELs = [""] # put the protect models here
+PROTECTED_MODELs = [""]  # put the protect models here
 #===============================
-#快取，連線好不會因為刷新就一直重新連
+#快取，連線好後不會因為刷新就一直重新連
 
 @st.cache_resource
 def get_engine(url):
@@ -58,44 +72,90 @@ def get_engine(url):
 def is_protected_model(filepath):
     filename = os.path.basename(filepath)
     return filename in PROTECTED_MODELs 
-#===========================
+
+def bagging_rf(n_bags, base_model, X_train_final, y_train):
+    pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
+    unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
+    # obtain the number of positive and unlabeled data
+    number_pos = len(pos_idx)
+
+    rng = np.random.default_rng(42)
+    models = []
+    for bag in range(n_bags):
+
+        #select same number data of positive data from unlabeld data
+        sampled_unl_idx = rng.choice(
+            unl_idx,
+            size=number_pos,
+            replace=False
+        )
+
+        sampled_idx = np.concatenate([
+            pos_idx,
+            sampled_unl_idx
+        ])
 
 
+        rng.shuffle(sampled_idx)
+
+        X_pu = X_train_final.iloc[sampled_idx]
+        y_pu = y_train.iloc[sampled_idx]
+        model_clone = clone(base_model)
+        model_clone.fit(X_pu, y_pu)
+        models.append(model_clone)
+    return models
+            
+def predict_proba_pu(models, X):
+    probs = [m.predict_proba(X)[:, 1] for m in models]
+    return np.mean(probs, axis=0)
+
+#=============================================
+                    # GUI Section
+#=============================================
 try:
+    # database connection 
     engine = get_engine(DB_URL) 
     with engine.connect() as conn:
         st.sidebar.success('Database coonected')
 
+
+    # create 5 tab 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ['1. upload dataset', 
          '2. preview database and tables',
          '3. Train Model',
          '4. Predict / Inference',
          '5. System Managemnet'
-         ]) #兩個分頁
+         ]) 
  
-    #================
+#================= Tab 1 =============================
+#               Upload data file
+#=====================================================
     with tab1:
-        st.subheader('1. Produce data')
+        st.subheader('1. Upload Data')
 
-        uploaded_file = st.file_uploader("Select upload file", type=['txt'])
+        uploaded_file = st.file_uploader("Select upload file", type=['txt']) # upload data file generated from GCWerks
+
+        # File selected, start parse file
         if uploaded_file is not None:
             if instrument_type == "GC-MD":
                 processor = GCMDprocessor(uploaded_file)
                 df = processor._parse_file()# 檔案進來就解析
+            #---------------- 
             #else:
             #    processor = OPTICALprocessor(uploaded_file)
             #    df = processor._parse_file()
+            #---------------- 
 
-            # Preview
-            st.write("Preview 100 :")
+            # Preview data
+            st.write("Preview 100: ")
 
-            #資料在這邊
+            # Uploaded Data
             st.dataframe(df.head(100), width='stretch')
             target_table = st.text_input('Enter table name:', default_table_name)
-            write_mode = st.radio("writing mode:", ["append","replace" ], format_func=lambda x: "Append" if x=='append' else "replace")
+            write_mode = st.radio("writing mode:", ["append","replace" ], format_func=lambda x: "Append" if x=='append' else "replace") # append or replace selection control part
 
-
+            # upload data to database
             if st.button('upload data into database'):   
                 with st.spinner('Data uploading...' ):
                     df.to_sql(
@@ -106,18 +166,20 @@ try:
                         chunksize=10000,
                     )   
 
-                    st.balloons() # 氣球圖案
+                    st.balloons() # balloon partten
                     st.success(f'uploaded {len(df):,} data to `{target_table}` table')
         else:
             st.info("Please upload txt file")
 
-#=============== 
-# Database Preview
-#===================
+#=============================== Tab 2===================================
+                        # Database Preview
+#========================================================================
+
     with tab2:
         st.subheader('Database Preview')
 
-        base_engine = get_engine(BASE_URL)
+        base_engine = get_engine(BASE_URL) # get connection engine
+
         with base_engine.connect() as conn:
             databases_df = pd.read_sql("SHOW DATABASES;", con=conn)
             system_dbs = [
@@ -133,10 +195,12 @@ try:
                 if db not in system_dbs
             ]
 
+            # show selection box
             selected_db = st.selectbox("SELECT database:", db_list)
 
             selected_db_url = f"mysql+pymysql://root:rootpassword@db:3306/{selected_db}"
             current_db_engine = get_engine(selected_db_url)
+
 
             with current_db_engine.connect() as conn:
                 tables_df = pd.read_sql("SHOW TABLES", con=conn)
@@ -152,6 +216,7 @@ try:
                     f"Current viewing {selected_db} -{selected_table}"
                 )
 
+                # *****data viewing number limitation *****
                 limit = st.slider(
                     "Preview limitation (Limit)",
                     min_value = 10,
@@ -172,99 +237,84 @@ try:
 
                 st.dataframe(preview_df, width='stretch')
 
+#=============================Tab 3==========================================
+#                         Model training                                            
+#============================================================================
     with tab3:
         st.subheader('Model training')
         st.write("Train the model using the data from the database")
         with engine.connect() as conn:
             tables_df = pd.read_sql("SHOW TABLES", con=conn)
             table_list = tables_df.iloc[:, 0].tolist()
+
+        # select the training data ffrom database tables    
         train_table = st.selectbox('SELECT table:', table_list, key="train_table_input")
-        def bagging_rf(n_bags, base_model, X_train_final, y_train):
-            pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
-            unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
-            # obtain the number of positive and unlabeled data
-            number_pos = len(pos_idx)
 
-            rng = np.random.default_rng(42)
-            models = []
-            for bag in range(n_bags):
-
-                #select same number data of positive data from unlabeld data
-                sampled_unl_idx = rng.choice(
-                    unl_idx,
-                    size=number_pos,
-                    replace=False
-                )
-
-                sampled_idx = np.concatenate([
-                    pos_idx,
-                    sampled_unl_idx
-                ])
-
-
-                rng.shuffle(sampled_idx)
-
-                X_pu = X_train_final.iloc[sampled_idx]
-                y_pu = y_train.iloc[sampled_idx]
-                model_clone = clone(base_model)
-                model_clone.fit(X_pu, y_pu)
-                models.append(model_clone)
-            return models
-            
-        def predict_proba_pu(models, X):
-            probs = [m.predict_proba(X)[:, 1] for m in models]
-            return np.mean(probs, axis=0)
-
+        # save state
         if 'evaluated' not in st.session_state:
             st.session_state.evaluated = False
         if 'eval_data' not in st.session_state:
             st.session_state.eval_data = {}
 
+        #
         if st.button('Train and Evaluate Model'):
             with st.spinner('Reading data from sql'):
                 try:
                     df_train = pd.read_sql(f"SELECT * FROM `{train_table}`", con=engine)
+
                     if instrument_type == "GC-MD": # 
                         processor = GCMDprocessor(uploaded_file)
                         if df_train.empty:
                             st.warning("No data, please upload first!")
+
+                        #******************** Model training control part*******************
                         else:
 
-                            #訓練的資料
+                            # Training data
                             st.success("data training...")
-                            # 80% training, 20% testing
-                            X_train_final, y_train_final, X_test_final, y_test_final = processor._preprocessing(df_train)
+                            # 80% training, 20% testing(evaluating)
+                            X_train_final, y_train_final, X_test_final, y_test_final = processor._preprocess_train_data(df_train)
                             
-                            #st.success(f'{X_train_final.columns}')
+                            #****** Model *****
                             n_bags=30
                             base_rf = lgb.LGBMClassifier(learning_rate=0.05, n_estimators=100, num_leaves=50, random_state = 42, n_jobs=1)
+                            #******************
+
                             #base_rf =  xgb.XGBClassifier(
                              #learning_rate=0.1, max_depth=5, n_estimators= 200,
                             #random_state=42
                             #)
-                            pu_models= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
-                            model = pu_models
-                            threshold = 0.8
-                            name='XGBOOST'
-                            y_prob_pu =  predict_proba_pu(pu_models, X_test_final)
-                            y_pred_pu = (y_prob_pu >= threshold).astype(int)
 
-                            auc_pu = roc_auc_score(y_test_final, y_prob_pu)
-                            pr_auc_pu = average_precision_score(y_test_final, y_prob_pu)
+                            pu_models= bagging_rf(n_bags, base_rf , X_train_final, y_train_final)
+                            model = pu_models # final model
+
+                            threshold = 0.8 # used to plot confusion metrix
+                            name='LightGBM'
+                            y_prob_pu =  predict_proba_pu(pu_models, X_test_final) # probability of as 1
+                            y_pred_pu = (y_prob_pu >= threshold).astype(int) # label
+
+                            auc_pu = roc_auc_score(y_test_final, y_prob_pu) # auc 
+                            pr_auc_pu = average_precision_score(y_test_final, y_prob_pu) # prc
                             
-                            #====================_test_final)
+                            #==================== Evaluation ==================
+                            # create figures
                             fig_cm, axes_cm = plt.subplots(figsize=(8,6))
                             fig_roc, ax_roc = plt.subplots(figsize=(8,6))
                             fig_prc, ax_prc = plt.subplots(figsize=(8,6))
                             #====================
+                            # Roc plot
                             fpr_pu, tpr_pu, _ = roc_curve(y_test_final, y_prob_pu)
                             ax_roc.plot(fpr_pu, tpr_pu, linestyle='--', label=f'{name} (PU) - AUC: {auc_pu: .3f}')
 
+                            # Prc plot
                             prec_pu, rec_pu, _ = precision_recall_curve(y_test_final, y_prob_pu)
                             ax_prc.plot(rec_pu, prec_pu, linestyle='--', label=f'{name} (PU) - PU-AUC:{pr_auc_pu: .3f}')
 
+                            # plot confusion metrix
                             cm = confusion_matrix(y_test_final, y_pred_pu)
                             sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes_cm, cbar=False, xticklabels=['Pred:0','Pred:1'], yticklabels=['True:0', 'True:1'])
+
+                            #========= auc, prc, confusion metrix figures setting======================
                             axes_cm.set_title(f"{name} (PU) Confusion matrix")
                             axes_cm.set_xlabel("Predicted Label")
                             axes_cm.set_ylabel("True Label")
@@ -278,8 +328,6 @@ try:
 
                             fig_roc.tight_layout()
                             
-
-
                             baseline_pr = np.sum(y_test_final == 1) / len(y_test_final)
 
                             ax_prc.axhline(y=baseline_pr, color='k', linestyle='--', alpha=0.5, label=f'Baseline ({baseline_pr:.3f})')
@@ -287,7 +335,9 @@ try:
                             ax_prc.set_xlabel("Recall")
                             ax_prc.set_ylabel("Precision")
                             ax_prc.legend()
-
+                            #===============================================================================
+                            
+                            # Save results
                             st.session_state.eval_data={
                                 'fig_cm':fig_cm,
                                 'fig_roc':fig_roc,
@@ -304,43 +354,58 @@ try:
                 except Exception as ex:
                                     st.error(f"traiing failed:{ex}")
                                     st.code(traceback.format_exc())
+
         if st.session_state.evaluated:
             eval_data = st.session_state.eval_data
-                            #=======================
+         #======================= Evaluation results ================
             col1, col2, col3 = st.columns(3)
-
+            # ========= Col1: COnfusion metrix ===========
             with col1:
                 st.subheader("Confusion Matrix")
                 st.pyplot(eval_data['fig_cm'], use_container_width=True)
+            #========== Col 2: ROC Curve ==================
             with col2:
                 st.subheader("ROC Curve")
                 st.pyplot(eval_data['fig_roc'], use_container_width=True)
+            #============== Col3: PRC Curve ====================
             with col3:
-                st.subheader("PR Curve")
+                st.subheader("PRC Curve")
                 st.pyplot(eval_data['fig_prc'], use_container_width=True)
+         #=============================================================
             st.markdown("---")
+            #================= Trainig on full dataset ===========================
             if st.button('Training Final Model'):
                 with st.spinner('Training final model on full dataset'):
+                    # get all dataset
                     X_train_all= pd.concat([eval_data['X_train_final'], eval_data['X_test_final']], axis=0).reset_index(drop=True)
                     y_train_all = pd.concat([eval_data['y_train_final'], eval_data['y_test_final']], axis=0).reset_index(drop=True)
+
+                    # train model
                     final_models =  bagging_rf(eval_data['n_bags'], eval_data['base_rf'] , X_train_all, y_train_all)
- 
+                    # timestamp: used as part of file name 
                     timestamp = datetime.now(ZoneInfo("Europe/London")).strftime("%Y%m%d_%H%M%S")
                     model_filename = os.path.join(MODEL_DIR, f"model_{timestamp}.pkl")
+
+                    # save model
                     joblib.dump(final_models, model_filename)
+
                     st.success(f"model training complete! saved as {model_filename}")
                     st.info(f'this training used {eval_data["df_train_len"]}data record')
-                        #====== feature importance
+                    #====================feature importance==========================
                     st.markdown("-----")
                     st.subheader("Feature Importance Analysis")
+                    # average feature importance 
                     avg_imp = np.mean([m.feature_importances_ for m in final_models], axis=0)
+                    # show as percentage
                     avg_imp_pct = (avg_imp / np.sum(avg_imp)) * 100
+                    # save results
                     df_imp = pd.DataFrame({
                         'Feature': X_train_all.columns,
                         'Importance': avg_imp_pct
                     })
                     df_imp_chart = df_imp.sort_values(by='Importance', ascending=True)
 
+                    # feature importance barchart
                     fig_imp = px.bar(
                         df_imp_chart,
                         x='Importance',
@@ -352,33 +417,43 @@ try:
                     fig_imp.update_layout(height=500 + (30*30))
 
                     st.plotly_chart(fig_imp, use_container_width=True)
+
+                    # show only numbers
                     with st.expander("View all Feature Importance"):
                         df_imp_table = df_imp.sort_values(by='Importance',ascending=False).reset_index(drop=True)
                         st.dataframe(df_imp_table,  use_container_width=True)
 
-#==================== Model Prediction
+#=================================Tab 4 ========================================
+#                            Model Prediction
+#===============================================================================
     with tab4:
         st.subheader('Inference / Prediction')
-        saved_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl")), reverse=True)
+
+        # obtain existed models
+        saved_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl"))+glob.glob(os.path.join(MODEL_DIR, "*.joblib")), reverse=True)
         if not saved_models:
             st.warning("No model can be used currently")
         else:
             selected_model_path = st.selectbox('select used model', options=saved_models)
 
+            # load selected model file
             loaded_model =  joblib.load(selected_model_path)
 
             st.success("Success!")
 
             st.markdown("-------")
 
+            # upload prediction txt file
             predict_file = st.file_uploader("upload the target txt file",
                                              type=['txt'], key="pred_file")
 
             if predict_file is not None:
                 if instrument_type == "GC-MD":
                     pred_processor = GCMDprocessor(predict_file)
+                #------------------------------
                 #elif instrument_type =="Optical":
                 #    pred_processor = OPTICALprocessor(predict_file)
+                #--------------------------------
                
                 df_test = pred_processor._parse_file() # df_test本身還含有std, air以外的data
                 #st.success(f'{df_test.columns}')
@@ -386,15 +461,15 @@ try:
                 valid_types = ['std', 'air']
                 df_test_filtered = df_test[df_test['type'].isin(valid_types)].copy()
 
-                X_test = pred_processor._predict(df_test_filtered)
+                X_test = pred_processor._preprocess_test_data(df_test_filtered)
                # st.success(f'{X_test.columns}')
 
                 if st.button("Contact model prediction"):
-                    all_probs = [m.predict_proba(X_test)[:, 1] for m in loaded_model]
-                    probs = np.mean(all_probs, axis=0)
+                    all_probs = [m.predict_proba(X_test)[:, 1] for m in loaded_model] # 1 bag is a model, 30 bag is 30 model, so we need to get the probability of a data in 30 model
+                    probs = np.mean(all_probs, axis=0) # average probability as an anomaly
 
 
-                    df_test_filtered['predicted_prob'] = pd.Series(probs, index=X_test.index)
+                    df_test_filtered['predicted_prob'] = pd.Series(probs, index=X_test.index) # save predicted probability results
                     df_results = df_test_filtered.sort_values(
                         by='predicted_prob', ascending=False
                     ).reset_index(drop=True)
@@ -409,9 +484,9 @@ try:
 
                     st.markdown("-----")
 
-                    #st.header("Human - in- the loop")
+                    #st.header("Human -in- the loop")
 
-                    recommmended_thres = 0.5 #系統預設門檻
+                    recommmended_thres = 0.5 # Default threshold
                     st.sidebar.info(f"Default Threshold:{recommmended_thres}")
 
                     #讓使用者可以在1~0範圍滑動threshold
@@ -462,6 +537,7 @@ try:
                     df_sub['status'] = df_sub.apply(status, axis=1, thresh=threshold)
                     df_sub['plot_val'] = df_sub['C'].fillna(1000)
 
+                    #=====================Concentration-Year fugure setting=================
                     fig = px.scatter(
                         df_sub,
                         x='datetime',
@@ -509,39 +585,23 @@ try:
                                       annotation_font_color='black'
                                       )
                     st.plotly_chart(fig, use_container_width='True')
-                    #fig.add_hline(
-                    #    y = threshold,
-                    #    line_dash = 'dash',
-                    #    line_color = 'red',
-                    #    annotation_text=f'Threshold = {threshold:.3f}',
-                    #    annotation_position='top left'
-                   #    
-                    #)
-                    #st.plotly_chart(fig, use_container_width=True)
-
-
-
+                    #===========================================================
 
                     # human-in-the-loop
 
-                    st.header("Human-in-te-loop")
-                    st.write("View high probability data, select in the box of `human_label`:")
-
-                    #df_res['human_label'] = (df_res['predicted_prob'] >= threshold).astype(int)
+                    st.header("Human-in-the-loop")
+                    st.write("View high probability data, select in the box of `flag_label`:")
 
                     edited_df = st.data_editor(
                         df_res,
                         column_config={
                             "predicted_prob": st.column_config.NumberColumn("Model predicted probability", format="%.4f"),
-                            #"human_label":st.column_config.SelectboxColumn(
-                            #    "Human Label (0=normal; 1=anomaly)",
-                            #    options=[1,0],
-                            #    required=True
-                            #)
                         },
                         width='stretch'
                     )
-                    #================== data loading
+
+                    #================== data loading ===================
+                    # 資料確認上船新增 或是 取代
 
                     st.markdown('Database setting')
                     inspector = inspect(engine)
@@ -554,11 +614,14 @@ try:
                     ) 
                     target_save_table = ""
 
+                    # 使用者選擇"新增"至現有的 table，進行資料庫table存在確認
                     if save_mode == "Append to exist tables":
                         if existing_table:
                             target_save_table = st.selectbox("Please select append table", options=existing_table)
                         else:
                             st.warning("There is now tables in the database, pleases switch to 'Create New table'")
+
+                    # 使用者選擇 "Replace" 現有的table，進行資料庫table存在確認
                     else:
                         col_db1, col_db2 = st.columns([2,1])
                         with col_db1:
@@ -570,26 +633,30 @@ try:
                         if target_save_table in existing_table:
                             st.error(f"Table `{target_save_table} exists! Please switch to append 'Current exist table'")
 
-
+                    # 執行按鈕點選後根據使用者選擇進行相應的資料上傳動作
                     if st.button('Checked!Loading data into sql database'):
+
                         if not target_save_table:
                             st.error("Please fill in or select current table name!")
+
                         elif save_mode == "Create new table" and target_save_table in existing_table:
-                            st.error(f"Failed! can not loading dat into `{target_save_table}` exists, change name")
+                            st.error(f"Failed! can not loading dat into `{target_save_table}` exists, please try another name")
+
                         else:
+                            # 確認名稱沒有以上問題，則開始執行table上傳
                             with st.spinner('Loading checked data into database'):
                                 try:
-                                    #time_col = ["date", "time"]
-
+                                    
                                     if save_mode == "Append to exist tables":
-                                        existing_df = pd.read_sql(f"SELECT * FROM `{target_save_table}`", con=engine)
-                                        cols_to_drop = ['predicted_prob', 'datetime']
+                                        existing_df = pd.read_sql(f"SELECT * FROM `{target_save_table}`", con=engine) # 取得現有的 table 的所有資料
+                                        cols_to_drop = ['predicted_prob', 'datetime'] # 這兩個欄位來自於test的結果，不上傳這兩個欄位
                             
                                         edited_df = edited_df.drop(columns=cols_to_drop, errors='ignore')
 
                                         combined_df = pd.concat(
-                                        [existing_df, edited_df], ignore_index=False)
+                                        [existing_df, edited_df], ignore_index=False) #將現有的資料與要上傳的資料連接
 
+                                        # 確認新的上傳資料是否有重複，有重複就只存最新的
                                         if set(["date", "time"]).issubset(combined_df.columns):
                                             final_df = combined_df.drop_duplicates(subset=["date", "time"], keep='last')
                                         else:
@@ -601,33 +668,42 @@ try:
                                             if_exists="replace",
                                             index=False
                                         )
+
+                                    # 不 append 即為執行replace
                                     else:
                                         final_df = edited_df
                                         final_df.to_sql(
                                             name=target_save_table,
                                             con=engine,
-                                            if_exists='fail',
+                                            if_exists='fail', # 如果table已存在就拋出錯誤訊息
                                             index=False
                                         )
-                                    st.balloons()
+                                    st.balloons() # 成功則以氣球圖案顯示
                                     st.success(f"Success!")
+
+                                # 執行失敗時顯示錯誤原因    
                                 except Exception as e:
                                     st.error(f"Error:{e}")
                                     st.code(traceback.format_exc())
-
+                    #========= csv data 可供使用者下載 ==========
                     csv_data = df_test.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label='download all prediction results csv',
                         data = csv_data,
-                        file_name = f"predictions_{datetime.now().strftime('%Y%m%d')}.csv",
+                        file_name = f"predictions_{datetime.now().strftime('%Y%m%d')}.csv", #以時間戳作為檔名
                         mime = "text/csv"
                     )
-#=========== tab5 - Management
+
+#========================= tab5 ==================================
+#                     Management
+#=================================================================
     with tab5:
         st.subheader("System Management")
+
+        # 兩個分頁分別管理 table 和 model 
         m_col1, m_col2 = st.columns(2)
 
-        #==== delete table
+        #========== table 刪除管理
         with m_col1:
             st.markdown('Manage Database Tables')
 
@@ -635,42 +711,51 @@ try:
 
             try:
                 inspector = inspect(engine)
-                all_tables = inspector.get_table_names()
+                all_tables = inspector.get_table_names() # 取得資料庫 table
 
                 if not all_tables:
                     st.info("No tables available in the current database.")
                 else:
+                    # 給使用者選擇 table
                     target_del_table = st.selectbox(
                         "Select table to DELETE",
                         options = all_tables,
                         key="del_table_select"
                     )
 
+                    # 確認的勾選設定
                     confirm_del_table = st.checkbox(
                         f' confirm delete table `{target_del_table}',
                         key = "chk_del_table"
                     )
 
+                    #執行刪除操作
                     if st.button("Delete Selected Table", type="primary", disabled=not confirm_del_table):
                         with st.spinner("Deleting table..."):
                             with engine.begin() as conn:
                                 conn.execute(text(f"DROP TABLE `{target_del_table}`"))
                             st.success(f"Table `{target_del_table}` deleted successfully!")
                             st.rerun()
+
+            # 執行失敗則顯示原因
             except Exception as e:
                 st.error(f'connection failed: {e}')
                 st.code(traceback.format_exc())
-        #===== dele model
+
+        #===== 管理模型檔案 ===========
         with m_col2:
             st.markdown("Manage Models")
             st.caption("Manage trained model files (.pkl)")
 
-            all_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl")), reverse=True)
+            # 取得所有模型檔案
+            all_models = sorted(glob.glob(os.path.join(MODEL_DIR, "*.pkl"))+glob.glob(os.path.join(MODEL_DIR, "*.joblib")), reverse=True)
             if not all_models:
                 st.info("No saved Model")
 
             else:
                 model_options = {os.path.basename(p): p for p in all_models}
+
+                #讓使用者選擇模型檔案
                 selected_model_name = st.selectbox(
                     "Select model to manage:",
                     options = list(model_options.keys()),
@@ -682,11 +767,13 @@ try:
                 if is_protected_model(selected_model_path):
                     st.warning("This is a System Default Model and cannot be deleted")
                 else:
+                    # 確認刪除的勾選設定
                     confirm_del_model = st.checkbox(
                         f"Confirm to delete model `{selected_model_name}`",
                         key="chk_del_model"
                     )
 
+                    #刪除模型檔案
                     if st.button("Delete Selected Model", type="primary", disabled=not confirm_del_model):
                         try:
                             os.remove(selected_model_path)
