@@ -14,12 +14,14 @@
     ```
 
 3. **Access to Web application**
+
     enter website (Local URL)
+
          http://localhost:8501 
 
 ### Web GUI Features
 |Tab       |Module    |Function   |
-|---|---|---|
+|-----|---------|------|
 |**Tab 1** | **Data Upload** | Data upload(only can upload data file the format is generated from GCWerks software)|
 |**Tab 2** |  **Database & Tables Preview** | Preview database and tables (select the database and the table you'd like to check)|
 |**Tab 3** |  **Model Training** | Model training/ Evaluation|
