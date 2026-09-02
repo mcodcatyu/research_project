@@ -32,15 +32,16 @@
 ```
 ├── gui/
 │   ├── Dockerfile   
-│   ├── app.py              # Web main application
-│   ├── data_processor.py     #Backend data parsing and feature engineering
+│   ├── app.py                # Web main application
+│   ├── data_processor.py     # Backend data parsing and feature engineering
 │   ├── docker-compose.yml
 │   ├── requirements.txt
 ├── src
-│   ├── 00_data_preprocessing.ipynb    # Raw data parsing and basic feature transformation
+│   ├── 00_data_conversion.ipynb       # Raw data parsing and basic feature transformation
 │   ├── 01_eda.ipynb                   # Exploratory data analysis and visualization
-│   ├── 02_feature_selection.ipynb     # Feature selection based on importance
-│   ├── 03_model_training.py           # Model training and Grid Search hyperparameter tuning
-│   ├── 04_generate_mock_data.ipynb    # Generate mock data for testing
+│   ├── 02_feature_eng.py              # Feature engineering pipeline
+│   ├── 03_feature_selection.ipynb     # Feature selection based on importance
+│   ├── 04_model_training.py           # Model training and Grid Search hyperparameter tuning
+│   ├── 05_generate_mock_data.ipynb    # Generate mock data for testing
 
 ```
