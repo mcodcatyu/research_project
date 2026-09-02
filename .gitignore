@@ -15,7 +15,7 @@ Thumbs.db
 */.ipynb_checkpoints/*
 .env
 .kaggle/
-*.txt
+
 data/
 *.db
 mlruns/

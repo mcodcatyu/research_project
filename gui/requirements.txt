@@ -1,0 +1,12 @@
+streamlit
+pandas
+sqlalchemy
+pymysql
+cryptography
+scikit-learn
+plotly
+pulearn
+xgboost
+matplotlib
+seaborn
+lightgbm
