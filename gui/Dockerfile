@@ -1,22 +1,23 @@
-#官方輕量版 Python 基礎鏡像
+#Official Lightweight Python base image
 FROM python:3.10-slim
 
-#設定容器內的工作目錄
+#Set the working directory inside the container
 WORKDIR /app
 
+# Install required system dependencies for machine learning and clear cache
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-#先複製requirements.txt
+#Copy requirements.txt first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製專案內的所有程式碼進容器
+# Copy all project source code into the container
 COPY . .
 
-#Streamlit 的預設port
+#Streamlit default port
 EXPOSE 8501
 
-#容器啟動時自動執行Streamlit網頁
+#Automatically launch the Stremlit app when the container starts
 CMD ["streamlit", "run", "app.py", "--server.port=8501","--server.address=0.0.0.0"]

@@ -1,38 +1,19 @@
 import pandas as pd
-import io
 import os
 import tempfile
 import numpy as np
-from pulearn import ElkanotoPuClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.base import BaseEstimator, TransformerMixin
-import numpy as np
 import pandas as pd
-import datetime
-import joblib
+#1e-7 to prevent division by zero
+#=====================================
+# Previously tested features with low importance are commedted out (retained for future reference)
 
-
-#===========================
-class GCMDprocessor:
-    def __init__ (self, uploaded_file, type_col='type'):
-        """
-            GCMD 資料處裡入口
-            Args:
-
-            Returns:
-
-        """
-        self.uploaded_file = uploaded_file
-        self.df=None
-        self.type_col = type_col
-        self.feature_cols= [
+default_feature_cols=[
                     'pflow', 'tmod',  'rt', 'w','type',
                     'ht', 'area', 'skew', 'start_time', 'end_time',
                     'start_level', 'end_level', 
                 ]
-        
-        #********* 使用的先前挑選出的重要性前30個的特徵 ****************
-        self.feature_ml = ['ht_roll_std_24h_ht_roll_mean_24h_ratio',
+
+default_feature_ml = ['ht_roll_std_24h_ht_roll_mean_24h_ratio',
                             'rt_to_last_air_ratio',
                             'area_roll_std_24h_area_roll_mean_24h_ratio',
                             'duration_rt_ratio',
@@ -62,9 +43,9 @@ class GCMDprocessor:
                             'w',
                             'start_time',
                             'area_to_last_air_ratio']
-        
-        #********* 特徵工程設定的config ****************
-        self.feature_config ={
+
+
+default_feature_config = {
                     'diff':{'cols': ['area', 
                                     'ht','w' , #'rt' 
                                 ], 'periods':[1]},
@@ -125,12 +106,38 @@ class GCMDprocessor:
                     }
 
         
+
+#===========================
+class GCMDprocessor:
+    def __init__ (self, uploaded_file, type_col='type', feature_cols = None, feature_ml = None, feature_config=None):
+        """
+            Process GC-MD instrment raw data (prduced by GCwerks)
+            Args:
+                uploaded_file:Path or file-like object of the uploaded raw data
+                type_col(str, optional): Column name Representing the sample type. Defaults to 'type'
+                feature_cols(list):List of raw feature column names to use.
+                feature_ml(list, optional): List of selected features. Default to top 30 important feature
+                feature_config(dict, optional): Configuration mapping feature categories to specific features to generate. Uses default settings if  None.
+        """
+        self.uploaded_file = uploaded_file
+        self.type_col = type_col
+        self.df=None #Strore parsed file data for downstream processsing
+        self.feature_cols= feature_cols if feature_cols is not None else default_feature_cols
+        
+        #**Allow custom feature list input; fallback to top 30 pre-selected important features if not provided **
+        self.feature_ml = feature_ml if feature_ml is not None else default_feature_ml
+        
+        self.feature_config = feature_config if feature_config is not None else default_feature_config
     # name the first 'ht' column into "inlet column"
     def _fix_feature_names(self, names):
         """
+            Specifically renames the first occurrence of 'ht' to 'inlet_ht'.
+            
             Args:
+                names(list): original feature names
 
-            Returns:
+            Returns: 
+                unique_names(list): List of modified feature names.
         """
         unique_names=[]
         ht_seen=False
@@ -151,13 +158,14 @@ class GCMDprocessor:
     #================================================
     def _parse_file(self):
         """
+            Parse uploaded GC-MD TXT file.
+            Separates raw measurements data from flags, and performs label encoding and time feature processing
             Args:
-
+                None: Uses instance attribute self.uploaded_file directly
             Returns:
-
+                pd.DataFrame: Processed instrument DataFrame with generated 'flag_label' column.
         """
         # Determine the source of input file: physical path strings or memory file objects
-        
 
         if isinstance(self.uploaded_file, str):
             file_path = self.uploaded_file
@@ -176,7 +184,7 @@ class GCMDprocessor:
         #================ Logic ============
         # obtain full header line -> obtain data header part & flag header(Spaces specify splitting required)
         # -> obtain final feature name -> read data, read flag data -> combine feature and data
-        #===============
+        #===================================
         try:
             flag_total_len = 28
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -222,7 +230,7 @@ class GCMDprocessor:
             sep=r'\s+',header=None, 
             names = feature_names,
             engine='python') # skip first row, txt is space seperated
-            #這邊是為了 把flag和真實的data放一起，所以各只取flag 和flag以外的數值
+            #Extract flag and non-flag data separatel to combine flags with actual measurements 
             
             df_mhd_data.columns = feature_names
 
@@ -234,9 +242,9 @@ class GCMDprocessor:
 
             df_mhd_flag.index = real_data_mhd.index 
 
-            # 將儀器資料與flag資料連接成一個df
+            # Concatenate instrument data and flag data into a single DataFrame
             real_data_mhd = pd.concat([real_data_mhd, df_mhd_flag], axis=1)
-            # fill with " "(讀取時空格會被當作nan 因此在這邊補上空格)
+            # fill with " "(treated as NaN during parsing)
             real_data_mhd[['flag_ht','flag_a',  'flag', 'flag_p']] = real_data_mhd[['flag_ht','flag_a',  'flag', 'flag_p']].fillna(" ")
             mapping={" ":0, 
                 "x":1, 
@@ -248,24 +256,28 @@ class GCMDprocessor:
             real_data_mhd ["flag_ht_encod"] = real_data_mhd ["flag_ht"].map(mapping)
             real_data_mhd ["flag_a_encod"] = real_data_mhd ["flag_a"].map(mapping)
 
-            # 建立機器學習需要的 label 欄位
+            # Create target label column required for ML 
             real_data_mhd ["flag_label"] = ((real_data_mhd ["flag_ht_encod"]==1) | (real_data_mhd ["flag_a_encod"]==1)).astype(int)
             real_data_mhd=real_data_mhd.drop(columns=["flag_a_encod", "flag_ht_encod"])
             self.df = self._process_datetime(real_data_mhd)
 
             return self.df
         finally:
-            # 若為寫入之臨時檔，則程式結束後自動刪除
+            # Auto-delete temporary file upon programme exit
             if cleanup_temp and os.path.exists(file_path):
                 os.remove(file_path)
 
 
-    # 設定 timestamp作為 index(後續 Feature_eng 需要)
+    # Set timestamp as index (required for feature engineering)
     def _process_datetime(self, df):
         """
+            Combine date and time columns into a DatetimeIndex
+            Merges 'date'(YYMMDD) and 'time' (HHMMSS columns and converts them into a DatetimeIndex
             Args:
+                df(pd.DataFrame): Input DataFrame containing 'date' and 'time' columns
 
             Returns:
+                df(pd.DataFrame): DataFrame indexed by datetime (DatetimeIndex)
 
         """
         df['date'] = df['date'].astype(str).str.zfill(6)
@@ -283,29 +295,36 @@ class GCMDprocessor:
     # 
     def _preprocess_train_data(self, df):
         """
+        Split data chronologically and apply TSFE ransformation.
+        Splits input data into an 80% training set and a 20% validation set by time, then applies time-series feature engineering.    
             Args:
-
+                df(pd.DataFrame): Complete DataFrame containing raw features and target labels.
             Returns:
+                tuple: (X_train_final, y_train, X_test_final, y_test)
+                X_train_final: Transformed training features
+                y_train: Training target labels
+                X_test_final:Transformed validation features
+                y_test:Validation target labels
 
         """
-        # 目標 label
+        # Target label
         target = 'flag_label'        
-        #預測的代碼放這
+        
         X = df[self.feature_cols]
         y = df[target]
         split_idx = int(len(df)*0.8)
 
-        # 依照時間順序分為 80% train; 20% test.
+        # Chronological split: 80% train, 20% test
         X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
         y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
         tsfe = TSFE(feature_cols=self.feature_cols, feature_config=self.feature_config)
 
-        # 特徵工程轉換
+        # Feature engineering transformation
         X_train_final = tsfe.transform(X_train)
         X_test_final = tsfe.transform(X_test)
 
-        # 只用以設定好的特徵
+        # Select only pre-configured features
         X_train_final = X_train_final[self.feature_ml]
         X_test_final = X_test_final[self.feature_ml]
         #=================
@@ -313,10 +332,13 @@ class GCMDprocessor:
 
     def _preprocess_test_data(self, df):
         """
-            test data 前處理與特徵轉換
+        Apply TSFE transformation and feature selection to prediction data
+
             Args:
+                df(pd.Dataframe): Raw input data for prediction
 
             Returns:
+                pd.DataFrame: Transformed and filtered feature DataFrame (X_pred_final) ready for inference
 
         """
         X_pred = df[self.feature_cols]
@@ -328,28 +350,34 @@ class GCMDprocessor:
 
 #============================== TSFE(Time-Series Feature Engineering) ========================================================
 class TSFE:
-    def __init__(self, feature_cols,  feature_config, type_col='type'):
+    def __init__(self, feature_cols,  feature_config=None, type_col='type'):
         """
-             class TSFE 入口
-             Args:
-                 feature_cols (list):選擇使用的原始特徵欄位
-                 feature_config (dict): 轉換的特徵類別以及要產生的特徵
-                 type_col (string, optional): 樣本類型
+            Initialize the TSFE class.
+            Args:
+                feature_cols(list):List of raw feature column names to use.
+                feature_config(dict, optional): Configuration mapping feature categories to specific features to generate. Uses default settings if  None.
+                type_col(str, optional): Column name Representing the sample type. Defaults to 'type'
         """
         self.feature_cols = feature_cols
-        self.feature_config = feature_config
+
+        if feature_config is not None:
+            self.feature_config = feature_config
+        else:
+            self.feature_config = default_feature_config 
+       
         self.type_col = type_col
 
     #==========
     def _fill_Nan(self, df, feature_cols):
         """
-        fill missing value(Nan), 前向填充後以中位數填充(若前向為nan時)
+        Forward-fill missing value(Nan),  filling any remaining leading NaNs with the median.
+        
         Args:
-            df(pd.DataFrame): 包含原始特徵與數值的輸入資料
-            feature_cols (list): 轉換的特徵類別以及要產生的特徵
+            df(pd.DataFrame): Input DataFrame containing raw features and numerical values
+            feature_cols(list): List of column names to perform missing value imputation on.
 
         Returns:
-            df(pd.DataFrame):完成NAN值填充後的資料。
+            df(pd.DataFrame):DataFrame with all NaN values filled
         """
         fill_cols = [c for c in feature_cols if c!='type']
         df[fill_cols] = df[fill_cols].ffill().fillna(df[fill_cols].median()) 
@@ -357,36 +385,38 @@ class TSFE:
     #===================
     def _generate_base_features(self, df):
         """
+        Generate features
         Args:
-            df(pd.DataFrame):包含原始特徵與數值的輸入資料
-
+             df(pd.DataFrame):DataFrame containing raw features and numerical values
+ 
         Returns:
-            df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+             df(pd.DataFrame):DataFrame with transformed and newly generated features
+                 - Added columns:'duration_rt_ratio', 'rt_position', 'baseline_slope', 'level_area_ratio','{col}_to_last_std_ratio',
         """
         #========
         target_cols = ['ht', 'area', 'rt', 'start_level']
 
         for col in target_cols:
-            for t_type in ['std', 'air']:# 只計算std和 air類型的數值
-                type_median = df.loc[df['type'] == t_type, col].median()# 計算中位數，用於填補 NAN值
+            for t_type in ['std', 'air']:# Only calculate values for 'std' and 'air' types
+                type_median = df.loc[df['type'] == t_type, col].median()# Compute median for NaN imputation
 
                 only_series = df[col].where(df['type']==t_type)
                 df[f'last_{t_type}_{col}'] = only_series.ffill().shift(1).fillna(type_median)
 
-        # 特徵和前一個std以及air的同特徵的數值比。譬如: 當前ht和 前一個std type的數值比較。
+        # Features ratios relative to previous 'std' and 'air' values (e.g., current 'ht' to previous 'std' 'ht')
         for col in ['ht', 'area', 'rt', 'start_level']:
             df[f'{col}_to_last_std_ratio'] = df[col] / (df[f'last_std_{col}'] + 1e-7)
             df[f'{col}_to_last_air_ratio'] = df[col] / (df[f'last_air_{col}'] + 1e-7)
-        # 衡量峰的相對展寬程度
+        # Measure relative peak broading
         df['duration_rt_ratio'] = (df['end_time'] -df['start_time'])/df['rt']
 
-        # 衡量峰的對稱性
+        # Measure peak symmetry
         df['rt_position'] = (df['rt'] - df['start_time']) / df['w']
 
-        # 峰開始到結束的基線高度單位時間變化
+        #Rate of baseline height change per unit time from peak start to end
         df['baseline_slope'] =(df['end_level'] -df['start_level'])/df['w']
 
-        # 背景基線高度(取較高者)相對於峰面積的比例
+        # Ratio of background baseline height (taking the heigher value) to peak area
         df['level_area_ratio'] = np.maximum(df['end_level'],df['start_level'] )/(df['area']+1e-7)
 
         return df
@@ -394,14 +424,18 @@ class TSFE:
     #===============
     def _gen_single_feature(self, df, opt, feature, period=None):
         """
-            Args:
-                df(pd.DataFrame):包含原始特徵與數值的輸入資料
-
-            Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+        Generate features based on a single column
+        Args:
+            df(pd.DataFrame):Target DataFrame to append new features to.
+            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            feature:
+            period (int, str, or list): Time window or  period step(s) for calculation.
+        Returns:
+            df(pd.DataFrame):Dataframe updated with newly engineered features.
+            Added columns: 'diff', 'lag', 'roll_std', 'roll_mean_percent_res', 'log', 'relative_per','per_rank', 'roll_median', 'roll_mad',
+            'roll_median_percent_res', 
         """
 
-        #同一個type自己跟自己比
+        # perform group-wise calculations within the same sample type
         if self.type_col in df.columns:
             g = df.groupby(self.type_col)[feature]
         else:
@@ -409,64 +443,65 @@ class TSFE:
 
         def _clean(reset):
             """
-                Args:
-                    df(pd.DataFrame):包含原始特徵與數值的輸入資料
-
-                Returns:
-                    df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
-            """
-             # 清理由groupby計算後產生的多重索引，並還原成原始DataFrame的順序
+                            Clean MultiIndex resulting from group-by operations and restore original index order
+                            Args:
+                                reset(pd.DataFrame): Intermediate DataFrame resulting from grouped calculations
+            
+                            Returns:
+                                reset(pd.DataFrame): Dataframe sorted back to its original index order
+                        """
+                        # Clean up MultiIndex created by groupby restore original DataFrame order
             if isinstance(reset.index, pd.MultiIndex):
                 return reset.reset_index(0, drop=True).sort_index()
             return reset
 
-        # 特徵自己和自己前p個值的差異
+        # Difference between current feature value and its value p periods ago
         if opt == 'diff':
             for p in period:
                 df[f'{feature}_diff_{p}'] = _clean(g.diff(p))
 
-        # 特徵自己的前p個值
+        # Lagged feature value by period p
         elif opt == 'lag':
             for p in period:
                 df[f'{feature}_lag_{p}'] = _clean(g.shift(p))
 
-        # 特徵自己 p時間範圍內的 standard deviation
+        # Rolling standard deviation over time window p
         elif opt == 'roll_std':
             for p in period:
                 df[f'{feature}_roll_std_{p}'] = _clean(g.rolling(window=p, closed='left').std())
 
-        # '{feature}_roll_mean_{p}':特徵自己在p時間範圍內的平均值
-        # '{feature}_residual_{p}': 以及特徵當下值和此平均值的差值
+        # '{feature}_roll_mean_{p}':Rolling mean over time window p
+        # '{feature}_residual_{p}': Residual relative to rolling mean --> Percentage deviation from win
         elif opt == 'roll_mean_percent_res':
             for p in period:
                 mean_col = _clean(g.rolling(window=p, closed='left').mean())
-                df[f'{feature}_roll_mean_{p}'] =mean_col #.fillna(df[f'{feature}_roll_mean_{p}'].median()) # self not included
-                df[f'{feature}_residual_{p}'] = ((df[f'{feature}']- mean_col)/(mean_col+1e-7))*100 # self not included
+                df[f'{feature}_roll_mean_{p}'] =mean_col 
+                df[f'{feature}_residual_{p}'] = ((df[f'{feature}']- mean_col)/(mean_col+1e-7))*100 
 
-        # 特徵自己的log 值
+        # Log transformation of feature
         elif opt =='log':
             df[f'{feature}_log'] = np.sign(df[f'{feature}'])*np.log1p(np.abs(df[f'{feature}']))
 
-        # 當前數值在過去p區間(最高值到最低值)的相對位置比例
+        # Relative position (min-max ratio) of current value within past window p
         elif opt == 'relative_per':
             for p in period:
                 roll_min = _clean(g.rolling(window=p, closed='left').min())
                 roll_max = _clean(g.rolling(window=p, closed='left').max())
                 df[f'{feature}_relative_per_{p}'] = (df[f'{feature}']-(roll_min))/((roll_max)-(roll_min)+1e-7)
 
-        # 在p時間範圍內的排名
+        # Rolling percentile rank over window p
         elif opt == 'per_rank':
             for p in period:
                 df[f'{feature}_per_rank_{p}'] = _clean(g.rolling(window=p, closed='left').rank(pct=True))
 
-        # 在p時間範圍內的 中位數值
+        # Rolling median over time window p
         elif opt == 'roll_median':
             for p in period:
                 df[f'{feature}_roll_median_{p}'] = (
                     _clean(g.rolling(window=p, closed='left').median())
                 )
 
-        # 過去p時間範圍內的中位數絕對偏差(Median Absolute Deviation)
+        # Median Absolute Deviation over time window p
         elif opt == 'roll_mad':
             def _calc_mad(x):
                 med = np.median(x)
@@ -477,7 +512,7 @@ class TSFE:
                     _clean(g.rolling(window=p, closed='left').apply(_calc_mad, raw=True))
                 )
 
-        # 健壯殘差比(Robust Residual Percentage)，當前數值相對於過去p時間範圍中位數偏離了百分之多少
+        # Robust Residual Percentage: Percentage deviation of current value relative to rolling median over window p 
         elif opt == 'roll_median_percent_res':
             """
             Robust residual ( percentage deviation of the current point from the median)
@@ -490,42 +525,49 @@ class TSFE:
 
     def _gen_cross_feature(self, df, opt, feat, period):
         """
+            Generate features onvolving interactions between multiple columns
             Args:
-                df(pd.DataFrame):包含原始特徵與數值的輸入資料
-            Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame):Target DataFrame to append new features to
+                opt (str) : Single-feature operation type (e.g., 'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res')
+                feature (list of str): List of column names participating in the cross operation.
+                period (int, str, or list): Time window or period step(s) for calculation.
+            returns:
+                df(pd.DataFrame):Dataframe updated with newly engineered features.
+                Added columns:'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'
         """
         f0, f1 = feat[0], feat[1]
 
-        # 特徵f0 和 f1的比值
+        # Ratio feature f0 to feature f1
         if opt == 'ratio':
             df[f'{f0}_{f1}_ratio'] = df[f0]/df[f1]
 
-        # 特徵 f0 和 特徵 f1 的差植
+        # Difference between feature f0 and feature f1
         elif opt == 'diff_cross':
             df[f'{f0}_{f1}_diff_cross'] = df[f0]-df[f1]
 
-        # 特徵 f0 和 特徵 f1 數值相乘
+        # Product of feature f0 and feaure f1
         elif opt == 'multi':
             df[f'{f0}_{f1}_multi'] = df[f0]*df[f1]
 
-        #特徵 f0 相較於特徵f1的百分比變化
+        # Percentage change of feature f0 relative to feature f1
         elif opt == 'per_change':
             df[f'{f0}_{f1}_per_change'] = (df[f0]-df[f1]/(df[f1]+1e-7))*100
 
-        # Z分數殘差
+        # Z-score residual
         elif opt == 'Z_score_res':
             df[f'{feat[0]}_{feat[3]}_zcore_res_gen'] = ((df[feat[0]]-df[feat[1]])/(df[feat[2]]+1e-7))
 
     #=================
     def _feature_eng_apply(self, df, config):
         """
+            Apply feature engineering rules defined in the config dictionary
             Args:
-                df(pd.DataFrame):包含原始特徵與數值的輸入資料
-                config(dict): 包含所有特徵內容的字典
+                df(pd.DataFrame):Input DataFrame containing raw features and numerical values
+                config(dict): Feature engineering configuration mapping operations (str) to
+                                their  corresponding parameter dictionaries(containing 'cols', 'period', or 'periods').
 
             Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame):Dataframe updated with newly engineered features.
         """
         
         cross_opts = {'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'}
@@ -541,11 +583,12 @@ class TSFE:
 
     def transform(self, X):
         """
+            Transform raw input data through the complete feature eng pipeline
             Args:
-                X(pd.DataFrame):包含原始特徵與數值的輸入資料
+                X(pd.DataFrame):Raw input DataFrame containing initial time-series features.
 
             Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame): Tranformed DataFrame with engineered features, cleaned missing and potential inf values, and optimized float32 datatypes
         """
         df = X.copy()
         df.index = pd.to_datetime(df.index)
@@ -557,7 +600,7 @@ class TSFE:
         df = self._feature_eng_apply(df, self.feature_config)
         df = df.replace([np.inf, -np.inf], np.nan) # handle inf values, prevent Nan values
 
-        #確保NAN數值皆填充
+        #Ensure all Nan values are filled
         df = self._fill_Nan(df, df.columns.tolist())
 
         float_cols = df.select_dtypes(include=['float64']).columns

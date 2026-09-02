@@ -3,19 +3,11 @@ import numpy as np
 import pandas as pd
 import numpy as np
 
-# + 1e-7 防止除以零食的錯誤
-class TSFE:
+#1e-7 to prevent division by zero
+#=====================================
+# Previously tested features with low importance are commedted out (retained for future reference)
 
-    def __init__(self, feature_cols, type_col='type'):#, target_col='label1'):
-        """
-            class TSFE 入口
-            Args:
-                feature_cols(list):選擇使用的原始特徵欄位
-                feature_config(dict): 轉換的特徵類別以及要產生的特徵
-                type_col(string): 樣本類型
-        """
-        self.feature_cols = feature_cols
-        self.feature_config ={
+default_feature_config  ={
     'diff':{'cols': ['CH4_area', 
                     'CH4_ht','CH4_w' ,# 'CH4_rt' #'tmod',#'CH4_end_time','CH4_start_time',,'CH4_rt'
                 ], 'periods':[1]},
@@ -74,21 +66,39 @@ class TSFE:
     #'Z_score_res':{'cols':[['CH4_w', 'CH4_w_roll_mean_3h', 'CH4_w_roll_std_3h', '3h'], #['CH4_end_time', 'CH4_end_time_roll_mean_7D', 'CH4_end_time_roll_std_7D', '7D']
                            #]},
     #'per_rank': {'cols': ['CH4_w', 'CH4_skew','CH4_ht'], 'period':['7D']},
-
-
     }
+
+#==============================================================================
+class TSFE:
+    def __init__(self, feature_cols, feature_config=None, type_col='type'):
+        """
+            Initialize the TSFE class.
+            Args:
+                feature_cols(list):List of raw feature column names to use.
+                feature_config(dict, optional): Configuration mapping feature categories to specific features to generate. Uses default settings if  None.
+                type_col(str, optional): Column name Representing the sample type. Defaults to 'type'
+        """
+        self.feature_cols = feature_cols
+
+        if feature_config is not None:
+            self.feature_config = feature_config
+        else:
+            self.feature_config = default_feature_config 
+       
         self.type_col = type_col
+
     #==========
     #=============
     def _fill_Nan(self, df, feature_cols):
         """
-        fill missing value(Nan), 前向填充後以中位數填充(若前向為nan時)
+        Forward-fill missing value(Nan),  filling any remaining leading NaNs with the median.
+        
         Args:
-            df(pd.DataFrame): 包含原始特徵與數值的輸入資料
-            feature_cols: 轉換的特徵類別以及要產生的特徵
+            df(pd.DataFrame): Input DataFrame containing raw features and numerical values
+            feature_cols(list): List of column names to perform missing value imputation on.
 
         Returns:
-            df(pd.DataFrame):完成NAN值填充後的資料。
+            df(pd.DataFrame):DataFrame with all NaN values filled
         """
         fill_cols = [c for c in feature_cols if c!='type'] # 不填充type類別(為string)
         df[fill_cols] = df[fill_cols].ffill().fillna(df[fill_cols].median()) # df[feature_cols].median()
@@ -96,50 +106,56 @@ class TSFE:
     
     def _basic_feature(self, df):
         """
+        Generate features
         Args:
-            df(pd.DataFrame):包含原始特徵與數值的輸入資料
+            df(pd.DataFrame):DataFrame containing raw features and numerical values
 
         Returns:
-            df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+            df(pd.DataFrame):DataFrame with transformed and newly generated features
+                - Added columns:'duration_rt_ratio', 'rt_position', 'baseline_slope', 'level_area_ratio','{col}_to_last_std_ratio',
         """
         target_cols = ['ht', 'area', 'rt', 'start_level']
 
         for col in target_cols:
             col = f'CH4_{col}'
 
-            for t_type in ['std', 'air']: # 只計算std和 air類型的數值
-                type_median = df.loc[df['type'] == t_type, col ].median() # 計算中位數，用於填補 NAN值
+            for t_type in ['std', 'air']: # Only calculate values for 'std' and 'air' types
+                type_median = df.loc[df['type'] == t_type, col ].median() # Compute median for NaN imputation
 
-                only_series = df[col].where(df['type']==t_type) # 
+                only_series = df[col].where(df['type']==t_type) 
                 df[f'last_{t_type}_{col}'] = only_series.ffill().shift(1).fillna(type_median)
 
-        # 特徵和前一個std以及air的同特徵的數值比。譬如: 當前ht和 前一個std type的數值比較。
+        # Features ratios relative to previous 'std' and 'air' values (e.g., current 'ht' to previous 'std' 'ht')
         for col in ['CH4_ht', 'CH4_area', 'CH4_rt', 'CH4_start_level']:
             df[f'{col}_to_last_std_ratio'] = df[col] / (df[f'last_std_{col}'] + 1e-7)
             df[f'{col}_to_last_air_ratio'] = df[col] / (df[f'last_air_{col}'] + 1e-7)
 
-        # 衡量峰的相對展寬程度
+        # Measure relative peak broading
         df['duration_rt_ratio'] = (df['CH4_end_time'] -df['CH4_start_time'])/(df['CH4_rt']+ 1e-7)
 
-        # 衡量峰的對稱性
+        # Measure peak symmetry
         df['rt_position'] = (df['CH4_rt'] - df['CH4_start_time']) / (df['CH4_w']+ 1e-7)
 
-        # 峰開始到結束的基線高度單位時間變化
+        # Rate of baseline height change per unit time from peak start to end
         df['baseline_slope'] =(df['CH4_end_level'] -df['CH4_start_level'])/(df['CH4_w']+ 1e-7)
         
-        # 背景基線高度(取較高者)相對於峰面積的比例
+        # Ratio of background baseline height (taking the heigher value) to peak area
         df['level_area_ratio'] = np.maximum(df['CH4_end_level'],df['CH4_start_level'] )/(df['CH4_area']+1e-7)
         return df
 
     def _gen_single_feature(self, df, opt, feature, period=None):
         """
+        Generate features based on a single column
         Args:
-            df(pd.DataFrame):包含原始特徵與數值的輸入資料
-
-        Returns:
-            df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+            df(pd.DataFrame):Target DataFrame to append new features to.
+            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            feature:
+            period (int, str, or list): Time window or  period step(s) for calculation.
+       Returns:
+            df(pd.DataFrame):Dataframe updated with newly engineered features.
+            Added columns: 'diff', 'lag', 'roll_std', 'roll_mean_percent_res', 'log', 'relative_per','per_rank', 'roll_median', 'roll_mad',
+            'roll_median_percent_res', 
         """
-        #同一個type自己跟自己比
+        # perform group-wise calculations within the same sample type
         if self.type_col in df.columns:
             g = df.groupby(self.type_col)[feature]
         else:
@@ -148,63 +164,64 @@ class TSFE:
 
         def _clean(reset):
             """
+                Clean MultiIndex resulting from group-by operations and restore original index order
                 Args:
-                    df(pd.DataFrame):包含原始特徵與數值的輸入資料
+                    reset(pd.DataFrame): Intermediate DataFrame resulting from grouped calculations
 
                 Returns:
-                    df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                    reset(pd.DataFrame): Dataframe sorted back to its original index order
             """
-            # 清理由groupby計算後產生的多重索引，並還原成原始DataFrame的順序
+            # Clean up MultiIndex created by groupby restore original DataFrame order
             if isinstance(reset.index, pd.MultiIndex):
                 return reset.reset_index(0, drop=True).sort_index()
             return reset
 
-        # 特徵自己和自己前p個值的差異
+        # Difference between current feature value and its value p periods ago
         if opt == 'diff':
             for p in period:
                 df[f'{feature}_diff_{p}'] = _clean(g.diff(p))
 
-        # 特徵自己的前p個值
+        # Lagged feature value by period p
         elif opt == 'lag':
             for p in period:
                 df[f'{feature}_lag_{p}'] = _clean(g.shift(p))
 
-        # 特徵自己 p時間範圍內的 standard deviation
+        # Rolling standard deviation over time window p
         elif opt == 'roll_std':
             for p in period:
                 df[f'{feature}_roll_std_{p}'] = _clean(g.rolling(window=p, closed='left').std())
 
-        # '{feature}_roll_mean_{p}':特徵自己在p時間範圍內的平均值
-        # '{feature}_residual_{p}': 以及特徵當下值和此平均值的差值
+        # '{feature}_roll_mean_{p}':Rolling mean over time window p
+        # '{feature}_residual_{p}': Residual relative to rolling mean --> Percentage deviation from window mean
         elif opt == 'roll_mean_percent_res':
             for p in period:
                 mean_col = _clean(g.rolling(window=p, closed='left').mean())
                 df[f'{feature}_roll_mean_{p}'] =mean_col
                 df[f'{feature}_residual_{p}'] = ((df[f'{feature}']- mean_col)/(mean_col+1e-7))*100 
 
-        # 特徵自己的log 值
+        # Log transformation of feature
         elif opt =='log':
             df[f'{feature}_log'] = np.sign(df[f'{feature}'])*np.log1p(np.abs(df[f'{feature}']))
 
-        # 當前數值在過去p區間(最高值到最低值)的相對位置比例
+        # Relative position (min-max ratio) of current value within past window p
         elif opt == 'relative_per':
             for p in period:
                 roll_min = _clean(g.rolling(window=p, closed='left').min())
                 roll_max = _clean(g.rolling(window=p, closed='left').max())
                 df[f'{feature}_relative_per_{p}'] = (df[f'{feature}']-(roll_min))/((roll_max)-(roll_min)+1e-7)
 
-        # 在p時間範圍內的排名
+        # Rolling percentile rank over window p
         elif opt == 'per_rank':
             for p in period:
                 df[f'{feature}_per_rank_{p}'] = _clean(g.rolling(window=p, closed='left').rank(pct=True))
 
-        # 在p時間範圍內的 中位數值
+        # Rolling median over time window p
         elif opt == 'roll_median':
             for p in period:
                 df[f'{feature}_roll_median_{p}'] = (
                     _clean(g.rolling(window=p, closed='left').median()))
 
-        # 過去p時間範圍內的中位數絕對偏差(Median Absolute Deviation)
+        # Median Absolute Deviation over time window p
         elif opt == 'roll_mad':
             def _calc_mad(x):
                 med = np.median(x)
@@ -214,11 +231,8 @@ class TSFE:
                     _clean(g.rolling(window=p, closed='left').apply(_calc_mad, raw=True))
                 )
 
-        # 健壯殘差比(Robust Residual Percentage)，當前數值相對於過去p時間範圍中位數偏離了百分之多少
+        # Robust Residual Percentage: Percentage deviation of current value relative to rolling median over window p 
         elif opt == 'roll_median_percent_res':
-            """
-            # Robust residual ( percentage deviation of the current point from the median)
-            """
             for p in period:
                 median_col =df[f'{feature}_roll_median_{p}']
                 df[f'{feature}_robust_residual_{p}'] = (
@@ -227,38 +241,45 @@ class TSFE:
 
     def _gen_cross_feature(self, df, opt, feat, period):
         """
+            Generate features onvolving interactions between multiple columns
             Args:
-                df(pd.DataFrame):包含原始特徵與數值的輸入資料
-            Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame):Target DataFrame to append new features to
+                opt (str) : Single-feature operation type (e.g., 'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res')
+                feature (list of str): List of column names participating in the cross operation.
+                period (int, str, or list): Time window or period step(s) for calculation.
+            returns:
+                df(pd.DataFrame):Dataframe updated with newly engineered features.
+                Added columns:'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'
         """
         f0, f1 = feat[0], feat[1]
 
-        # 特徵f0 和 f1的比值
+        # Ratio feature f0 to feature f1
         if opt == 'ratio':
             df[f'{f0}_{f1}_ratio'] = df[f0]/df[f1]
-        # 特徵 f0 和 特徵 f1 的差植
+        # Difference between feature f0 and feature f1
         elif opt == 'diff_cross':
             df[f'{f0}_{f1}_diff_cross'] = df[f0]-df[f1]
-        # 特徵 f0 和 特徵 f1 數值相乘
+        # Product of feature f0 and feaure f1
         elif opt == 'multi':
             df[f'{f0}_{f1}_multi'] = df[f0]*df[f1]
-        #特徵 f0 相較於特徵f1的百分比變化
+        # Percentage change of feature f0 relative to feature f1
         elif opt == 'per_change':
             df[f'{f0}_{f1}_per_change'] = ((df[f0]-df[f1])/(df[f1]+1e-7))*100
-        # Z分數殘差
+        # Z-score residual
         elif opt == 'Z_score_res':
             df[f'{feat[0]}_{feat[3]}_zcore_res_gen'] = ((df[feat[0]]-df[feat[1]])/(df[feat[2]]+1e-7))
 
     #=================
     def _feature_eng_apply(self, df, config):
         """
+            Apply feature engineering rules defined in the config dictionary
             Args:
-                df(pd.DataFrame):包含原始特徵與數值的輸入資料
-                config(dict): 包含所有特徵內容的字典
+                df(pd.DataFrame):Input DataFrame containing raw features and numerical values
+                config(dict): Feature engineering configuration mapping operations (str) to
+                             their  corresponding parameter dictionaries(containing 'cols', 'period', or 'periods').
 
             Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame):Dataframe updated with newly engineered features.
         """
         cross_opts = {'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'}
         for opt, params in config.items():
@@ -275,23 +296,24 @@ class TSFE:
 
     def transform(self, X):
         """
+            Transform raw input data through the complete feature eng pipeline
             Args:
-                X(pd.DataFrame):包含原始特徵與數值的輸入資料
+                X(pd.DataFrame):Raw input DataFrame containing initial time-series features.
 
             Returns:
-                df(pd.DataFrame):完成特徵轉換與新增後的資料。新增欄位:
+                df(pd.DataFrame): Tranformed DataFrame with engineered features, cleaned missing and potential inf values, and optimized float32 datatypes
         """
         df = X.copy()
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
 
         df = self._basic_feature(df)
-        df = self._fill_Nan(df, self.feature_cols) # NAN值填充
+        df = self._fill_Nan(df, self.feature_cols) # Fill Nan values
 
         df = self._feature_eng_apply(df, self.feature_config)
 
         df = df.replace([np.inf, -np.inf], np.nan) # handle inf values, prevent Nan values
-        #確保NAN數值皆填充
+        #Ensure all Nan values are filled
         df = self._fill_Nan(df, df.columns.tolist())
 
         float_cols = df.select_dtypes(include=['float64']).columns

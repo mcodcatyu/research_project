@@ -1,5 +1,5 @@
 # data tools and plotting
-from feature_eng import TSFE # feature engineering py file
+from feature_eng import TSFE # Time-Series feature engineering module
 import logging
 import warnings
 from pandas.errors import PerformanceWarning
@@ -17,7 +17,7 @@ import os
 
 # Model
 from sklearn.ensemble import RandomForestClassifier
-import  xgboost as xgb
+import xgboost as xgb
 import lightgbm as lgb
 from sklearn.base import clone
 
@@ -35,9 +35,10 @@ from sklearn.model_selection import  TimeSeriesSplit,  GridSearchCV, train_test_
 # create folder "img" to save figures
 os.makedirs('img', exist_ok=True) 
 
-# 讀取資料
+# Reading data
 df = pd.read_csv('../data/processed/mhd_ch4_cnan_v1.csv', index_col= 'datetime')
 df = df.drop(df[df['year']==2026].index)
+
 
 target ='label1'
 
@@ -45,9 +46,9 @@ feature_cols= [
   'type',
   'pflow', 'tmod',  'CH4_rt', 'CH4_w',
     'CH4_ht', 'CH4_area', 'CH4_skew', 'CH4_start_time', 'CH4_end_time',
-    'CH4_start_level', 'CH4_end_level', #'duration', 
+    'CH4_start_level', 'CH4_end_level',  
     'is_air','is_std',
-    ]
+]
 
 
 # only select the feature include in feature_cols
@@ -64,7 +65,7 @@ y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 print('Feature Eng... ')
 tscv = TimeSeriesSplit(n_splits=5) 
 
-tsfe = TSFE(feature_cols=feature_cols)
+tsfe = TSFE(feature_cols=feature_cols, feature_config=None)
 X_train_final = tsfe.transform(X_train)
 
 X_test_final = tsfe.transform(X_test)
@@ -112,46 +113,48 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def bagging_rf(n_bags, base_model, X_train_final, y_train):
     """
-    Argrs:
+    Args:
+        n_bags(int) : Number of bagging iterations (number of sub-models to train)
+        base_model(estimator) : Base model(Here we use RandomForest)
+        X_train_final(pd.DataFrame): Training data
+        y_train (pd.Series): Training target labels
 
-    Returns
+    Returns:
+        models(list) : List containing n_bags fitted models
     """
-    #儲存所有標籤為1的資料索引
+    #Save all data indices labeled 1
     pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
-    #儲存所有標籤為0的資料索引(這邊我們將其視為所謂的unlabeled)
+
+    #Save all data indices labeled 0 (which we treat as unlabeled here)
     unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
 
     # obtain the number of positive and unlabeled data
-    # 顯示unlabeled 和 positive 的數量
+    # Display the count of unlabeled and positive data
     print(f"Number of Bag: {n_bags}")
     number_pos = len(pos_idx)
     print("Positive:", len(pos_idx))
     print("Unlabeled:", len(unl_idx))
 
-    # 固定隨機樹種子(42)，確保每次 pu nagging 抽樣與打亂結果可重複
+    # Fix the random seed (42) to ensure that the PU bagging sampling and shuffling results are reproducuble each time 
     rng = np.random.default_rng(42)
 
     models = []
 
     for bag in range(n_bags):
-        """
-            Args:
-            Returns:
-        """
 
-        #抽取與positive同數量的unlabeled data
+        # Sample an equal amount of unlabeled data as positive data
         sampled_unl_idx = rng.choice(
             unl_idx,
             size=number_pos,
             replace=False
         )
-        # 組合索引(前半是positive, 後半是unlabeled)
+        # Combine indices (first half positive, second half unlabeled)
         sampled_idx = np.concatenate([
             pos_idx,
             sampled_unl_idx
         ])
 
-        #隨機打亂順序，避免前段都是positive,後段都是unlabeled
+        #Shuffle randomly to avoid having all positive data in the first half and unlabeled in the seond half
         rng.shuffle(sampled_idx)
 
         X_pu = X_train_final.iloc[sampled_idx]
@@ -171,19 +174,26 @@ def bagging_rf(n_bags, base_model, X_train_final, y_train):
 def predict_proba_pu (models, X):
     """
     Args:
+        models(List): List containing trained sub-models
+        X(pd.DataFrame):Data for prediction
     Returns:
+        np.ndarray: Mean anomaly probability for the positive class (labeled 1) across all sub-models
     """
     probs = [m.predict_proba(X)[:, 1] for m in models]
     return np.mean(probs, axis=0)
 
-#==================================================== WorkFlow =================================================== 
-"""
-    10% subset -> grid search -> find best parameter -> use best parameter to train model with all training data
-    -> predict probability and try different threshold to see the results-> save results
-    -> use previous model integrated with PU bagging -> prediction -> evaluation results 
-    -> produce figures
-"""
-#===================================================================================================================
+
+# ==========================================================================
+# Pipeline: PU Learnning & Model Optimization
+#==========================================================================
+#[1]  10% subset --> grid search --> Extract best parameters
+#[2] Full Data + Best Params --> Train Standard model
+#       -->  Predict Probabilities
+#       -->  Sweep Thresholds --> Save Stanadard Results
+#[3] Standard Model + PU Bagging --> prediction --> Evaluation
+#[4] Evaluation Data --> Generate Figures --> Save Results
+#======================================================================================
+
 # parameters for grid search
 param_grids = {
     "Random Forest":{
@@ -225,7 +235,7 @@ fig_roc, ax_roc = plt.subplots(figsize=(8,6))
 # prc plot
 fig_prc, ax_prc = plt.subplots(figsize=(8,6))
 
-
+# Save Results
 best_fitted_models = {}
 best_params_dict = {}
 best_score_dict = {}
@@ -264,6 +274,7 @@ for idx, (name, base_clf) in enumerate(base_models.items()):
     
     best_std_clf = clone(base_clf)
     best_std_clf.set_params(**best_params)
+    
     # fit model with all train data
     best_std_clf.fit(X_train_final, y_train)
 

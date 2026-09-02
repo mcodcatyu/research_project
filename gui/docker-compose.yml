@@ -1,6 +1,10 @@
 version: '3.8'
 
+# =========================================
+# Database Service (MySQL)
+#===========================================
 services:
+  # Basic settings
   db:
     image: mysql:8.0
     container_name: mysql_db
@@ -10,10 +14,17 @@ services:
     ports:
       - "3307:3306"
     volumes:
+      # Mount local initi.sql to the initialization directory to automatically set up table schemas or seed data on initial startup
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      #Persist MSQL data using the named volume below t prevent data loss after container deletion
       - db_data:/var/lib/mysql
 
+#========================================
+#  Web Service (Streamlit)
+#========================================
+
   web:
+  # Basic Settings
     build: .
     container_name: streamlit_app
     ports:
@@ -25,14 +36,17 @@ services:
       - DB_NAME=mydatabase
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/mydatabase
     volumes:
+      # Mount the current directory into the container to enable live updates on local code changes
       - .:/app
+      # Prevent local __pycache__ from overwriting container cache files to maintain environment isolation
       - /app/__pycache__
+      # Mount default model files(already trained) into the container
       - ./models/default_model.joblib:/app/models/default_model.joblib:ro
 
     depends_on:
-      - db
+      - db          # Ensure the db container starts before the web container
 
 volumes:
-  db_data:
+  db_data:           #Named volume used by the db service
 
     
