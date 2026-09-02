@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import numpy as np
-from data_convert import GCMDprocessor,TSFE
+from gui.data_processor import GCMDprocessor,TSFE
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, average_precision_score, precision_recall_curve
 
 import glob
@@ -24,7 +24,7 @@ import xgboost as xgb
 import lightgbm as lgb
 
 #==============================Functions=====================================================
-# tab1: Dataupload(only can upload data file the format is generated from GCWerks software)
+# tab1: Data upload(only can upload data file the format is generated from GCWerks software)
 # tab2: Preview database and tables (select the database and the table you'd like to check)
 # tab3 : Model training/ Evaluation
 # tab4: Anomaly probability prediction using saved models

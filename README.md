@@ -1,0 +1,44 @@
+# Project :  GHG data anomaly detection
+
+## Getting Started
+1. **Clone the repository:**
+   ```bash
+   git clone git@github.com:mcodcatyu/research_project.git
+   cd research_project
+   ```
+
+2. **Launch GUI Application**
+    ```bash
+    cd gui
+    docker-compose up --build  
+    ```
+
+3. **Access to Web application**
+    enter website (Local URL)
+         http://localhost:8501 
+
+### Web GUI Features
+|Tab       |Module    |Function   |
+|---|---|---|
+|**Tab 1** | **Data Upload** | Data upload(only can upload data file the format is generated from GCWerks software)|
+|**Tab 2** |  **Database & Tables Preview** | Preview database and tables (select the database and the table you'd like to check)|
+|**Tab 3** |  **Model Training** | Model training/ Evaluation|
+|**Tab 4** |  **Model Prediction** | Anomaly probability prediction using saved models|
+|**Tab 5** |  **System Management** | System management - Delete tables or model files|
+---
+## layout
+```
+├── gui/
+│   ├── Dockerfile   
+│   ├── app.py              # Web main application
+│   ├── data_processor.py     #Backend data parsing and feature engineering
+│   ├── docker-compose.yml
+│   ├── requirements.txt
+├── src
+│   ├── 00_data_preprocessing.ipynb    # Raw data parsing and basic feature transformation
+│   ├── 01_eda.ipynb                   # Exploratory data analysis and visualization
+│   ├── 02_feature_selection.ipynb     # Feature selection based on importance
+│   ├── 03_model_training.py           # Model training and Grid Search hyperparameter tuning
+│   ├── 04_generate_mock_data.ipynb    # Generate mock data for testing
+
+```
