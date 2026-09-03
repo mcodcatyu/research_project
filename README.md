@@ -42,6 +42,7 @@
 │   ├── 02_feature_eng.py              # Feature engineering pipeline
 │   ├── 03_feature_selection.ipynb     # Feature selection based on importance
 │   ├── 04_model_training.py           # Model training and Grid Search hyperparameter tuning
-│   ├── 05_generate_mock_data.ipynb    # Generate mock data for testing
+│   ├── 05_false_positive.ipynb        # Extract FP via pre=trained model for error analysis and performance evaluation
+│   ├── 06_generate_mock_data.ipynb    # Generate mock data for testing
 
 ```

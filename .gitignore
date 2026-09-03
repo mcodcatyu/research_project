@@ -16,7 +16,7 @@ Thumbs.db
 .env
 .kaggle/
 
-data/
+
 *.db
 mlruns/
 mlflow_artifacts/
@@ -67,8 +67,9 @@ models/
 *.png
 .vscode/
 *.json
-
+*.csv
 #===== folder
+data/
 0722/
 0724/
 0729/

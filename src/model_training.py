@@ -111,8 +111,9 @@ X_test_final  = X_test_final [feature_ml]
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def bagging_rf(n_bags, base_model, X_train_final, y_train):
+def bagging(n_bags, base_model, X_train_final, y_train):
     """
+        Perform PU Bagging
     Args:
         n_bags(int) : Number of bagging iterations (number of sub-models to train)
         base_model(estimator) : Base model(Here we use RandomForest)
@@ -331,7 +332,7 @@ for idx, (name, base_clf) in enumerate(base_models.items()):
     
     # 30 bags
     n_bags= 30
-    pu_clf= bagging_rf(n_bags,clone(best_std_clf), X_train_final, y_train)
+    pu_clf= bagging(n_bags,clone(best_std_clf), X_train_final, y_train)
 
     #predict probability
     y_prob_pu = predict_proba_pu(pu_clf, X_test_final)
