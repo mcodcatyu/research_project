@@ -41,7 +41,7 @@ services:
       # Prevent local __pycache__ from overwriting container cache files to maintain environment isolation
       - /app/__pycache__
       # Mount default model files(already trained) into the container
-      - ./models/default_model.joblib:/app/models/default_model.joblib:ro
+      - ./models/instrument_GC-MD/default_model.joblib:/app/models/instrument_GC-MD/default_model.joblib:ro
 
     depends_on:
       - db          # Ensure the db container starts before the web container
