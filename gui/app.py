@@ -12,15 +12,15 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import numpy as np
-from data_processor import GCMDprocessor,TSFE
+from data_processor import GCMDprocessor
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, average_precision_score, precision_recall_curve
 
 import glob
 import joblib
 import plotly.express as px
 import traceback
-from sqlalchemy import MetaData, Table, inspect, text
-import xgboost as xgb
+from sqlalchemy import inspect, text
+
 import lightgbm as lgb
 
 #==============================Functions=====================================================
@@ -61,7 +61,7 @@ elif instrument_type=='Optical':
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# put the protect models here
+# put the protected models here
 PROTECTED_MODELs = ["default_model.joblib"]  
 
 
@@ -96,7 +96,7 @@ def bagging_rf(n_bags, base_model, X_train_final, y_train):
         Conduct PU Bagging 
         Args:
             n_bags(int) : Number of bagging iterations (number of sub-models to train)
-            base_model(estimator) : Base model(Here we use RandomForest)
+            base_model(estimator) : Base model
             X_train_final(pd.DataFrame): Training data
             y_train (pd.Series): Training target labels
 
@@ -105,6 +105,7 @@ def bagging_rf(n_bags, base_model, X_train_final, y_train):
     """
     pos_idx = np.flatnonzero(y_train.to_numpy() == 1)
     unl_idx = np.flatnonzero(y_train.to_numpy() == 0)
+
     # Get sample counts for positive and unlabeled classes
     number_pos = len(pos_idx)
 
@@ -173,7 +174,7 @@ try:
 
         uploaded_file = st.file_uploader("Select a file to upload", type=['txt']) # upload data file generated from GCWerks
 
-        # File selected, start parse file
+        # if File selected, start parse file
         if uploaded_file is not None:
             # Identify instrument type
             if instrument_type == "GC-MD":
@@ -184,7 +185,7 @@ try:
             # Preview data
             st.write("Preview 100: ")
 
-            # Uploaded Data
+            # user Uploaded Data
             st.dataframe(df.head(100), width='stretch')
             target_table = st.text_input('Enter table name:', default_table_name)
             write_mode = st.radio("writing mode:", ["append","replace" ], format_func=lambda x: "Append" if x=='append' else "replace") # append or replace selection control part
@@ -208,7 +209,6 @@ try:
 #=============================== Tab 2===================================
                         # Database Preview
 #========================================================================
-
     with tab2:
         st.subheader('Database & Tables Preview')
 
@@ -290,13 +290,13 @@ try:
         if 'eval_data' not in st.session_state:
             st.session_state.eval_data = {}
 
-        #
+        # Model training 
         if st.button('Train and Evaluate Model'):
             with st.spinner('Fetching data from SQL...'):
                 try:
                     df_train = pd.read_sql(f"SELECT * FROM `{train_table}`", con=engine)
 
-                    if instrument_type == "GC-MD": # 
+                    if instrument_type == "GC-MD": #
                         processor = GCMDprocessor(uploaded_file)
                         if df_train.empty:
                             st.warning("No data found. Please upload data first.")
@@ -388,7 +388,7 @@ try:
             eval_data = st.session_state.eval_data
          #======================= Evaluation results ================
             col1, col2, col3 = st.columns(3)
-            # ========= Col1: COnfusion metrix ===========
+            # ========= Col 1: Confusion metrix ===========
             with col1:
                 st.subheader("Confusion Matrix")
                 st.pyplot(eval_data['fig_cm'], use_container_width=True)
@@ -396,7 +396,7 @@ try:
             with col2:
                 st.subheader("ROC Curve")
                 st.pyplot(eval_data['fig_roc'], use_container_width=True)
-            #============== Col3: PRC Curve ====================
+            #============== Col 3: PRC Curve ====================
             with col3:
                 st.subheader("PRC Curve")
                 st.pyplot(eval_data['fig_prc'], use_container_width=True)
@@ -489,7 +489,7 @@ try:
                
 
                 if st.button("Run Model Prediction"):
-                    all_probs = [m.predict_proba(X_test)[:, 1] for m in loaded_model] # 1 bag is a model, 30 bag is 30 model, so we need to get the probability of a data in 30 model
+                    all_probs = [m.predict_proba(X_test)[:, 1] for m in loaded_model] # 1 bag is a sub-model, 30 bag is 30 sub-model, so we need to get the probability of a data in 30 sub-model
                     probs = np.mean(all_probs, axis=0) # average probability as an anomaly
 
 
@@ -507,8 +507,6 @@ try:
                     df_res = st.session_state['pred_results'].copy()
 
                     st.markdown("-----")
-
-                    #st.header("Human -in- the loop")
 
                     recommmended_thres = 0.5 # Default threshold
                     st.sidebar.info(f"Default Threshold: {recommmended_thres}")

@@ -87,11 +87,11 @@ class TSFE:
        
         self.type_col = type_col
 
-    #==========
-    #=============
+
+    #===================================================================================
     def _fill_Nan(self, df, feature_cols):
         """
-        Forward-fill missing value(Nan),  filling any remaining leading NaNs with the median.
+        Forward-fill missing value(Nan), filling any remaining leading NaNs with the median.
         
         Args:
             df(pd.DataFrame): Input DataFrame containing raw features and numerical values
@@ -100,10 +100,11 @@ class TSFE:
         Returns:
             df(pd.DataFrame):DataFrame with all NaN values filled
         """
-        fill_cols = [c for c in feature_cols if c!='type'] # 不填充type類別(為string)
-        df[fill_cols] = df[fill_cols].ffill().fillna(df[fill_cols].median()) # df[feature_cols].median()
+        fill_cols = [c for c in feature_cols if c!='type'] # Omit the 'type' column (string)
+        df[fill_cols] = df[fill_cols].ffill().fillna(df[fill_cols].median()) 
         return df
     
+    #===================================================================================
     def _basic_feature(self, df):
         """
         Generate features
@@ -148,7 +149,8 @@ class TSFE:
         Generate features based on a single column
         Args:
             df(pd.DataFrame):Target DataFrame to append new features to.
-            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            feature:
+            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            
+            feature (list of str): List of column names participating in the single operation.
             period (int, str, or list): Time window or  period step(s) for calculation.
        Returns:
             df(pd.DataFrame):Dataframe updated with newly engineered features.
@@ -239,14 +241,13 @@ class TSFE:
                     (df[f'{feature}']-median_col)/(median_col +1e-7 )*100
                 )
 
-    def _gen_cross_feature(self, df, opt, feat, period):
+    def _gen_cross_feature(self, df, opt, feat):
         """
             Generate features onvolving interactions between multiple columns
             Args:
                 df(pd.DataFrame):Target DataFrame to append new features to
                 opt (str) : Single-feature operation type (e.g., 'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res')
-                feature (list of str): List of column names participating in the cross operation.
-                period (int, str, or list): Time window or period step(s) for calculation.
+                feat (list of str): List of column names participating in the cross operation.
             returns:
                 df(pd.DataFrame):Dataframe updated with newly engineered features.
                 Added columns:'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'
@@ -287,7 +288,7 @@ class TSFE:
             period = params.get('period') or params.get('periods', 1) # period's value -> periods's -> 1
             for feature in cols:
                 if opt in cross_opts:
-                    self._gen_cross_feature(df, opt, feature, period)
+                    self._gen_cross_feature(df, opt, feature)
                 else:
                     self._gen_single_feature(df, opt, feature, period)
         return df 

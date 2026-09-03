@@ -153,8 +153,8 @@ class GCMDprocessor:
     
     #================================================
     # data parse here
-    # The GC-MD file format is quite complex, that contains space and fixed-width
-    # so we use below method to ensure the data is correct readed
+    # The GC-MD file format contains space and fixed-width
+    # so we use methods as below to ensure the data is correctly readed
     #================================================
     def _parse_file(self):
         """
@@ -182,8 +182,10 @@ class GCMDprocessor:
             cleanup_temp = True
 
         #================ Logic ============
-        # obtain full header line -> obtain data header part & flag header(Spaces specify splitting required)
-        # -> obtain final feature name -> read data, read flag data -> combine feature and data
+        # [1] Fetch full header (data & flag headers, space-separated)
+        # [2] Extract final feature names
+        # [3] Read data and flag data
+        # [4] Concatenate feature and flag data
         #===================================
         try:
             flag_total_len = 28
@@ -211,7 +213,7 @@ class GCMDprocessor:
             # name first 'ht' as 'inlet_ht'(where it should be)
             feature_names = self._fix_feature_names(raw_feature_names)
 
-            # read data(we will only use the data part without flag data part after)
+            # Read data (to be used later to extract measurement data)
             df_mhd=pd.read_fwf(
             file_path,
             skiprows=3,
@@ -220,24 +222,24 @@ class GCMDprocessor:
             keep_default_na=False
             )
 
-            # set feature name as the previous obtained feature name(we will only use flag data for this one after)
+            # Set feature names using previously obtained header 
             df_mhd.columns = feature_names
 
-            # read the file in the way that the flag space is right
+            # Read data (to be used later to extract flag data)
             df_mhd_data = pd.read_csv(
             file_path, 
             skiprows=3,
             sep=r'\s+',header=None, 
             names = feature_names,
             engine='python') # skip first row, txt is space seperated
-            #Extract flag and non-flag data separatel to combine flags with actual measurements 
+            #Extract flag and non-flag data separatel to combine flags with actual measurement data 
             
             df_mhd_data.columns = feature_names
 
             # obtain instrument data from df_mhd_data
             real_data_mhd = df_mhd_data.iloc[:, :-4]
 
-            # obtain flag data from df_mhd_data
+            # obtain flag data from df_mhd
             df_mhd_flag = df_mhd.iloc[:, -4:]
 
             df_mhd_flag.index = real_data_mhd.index 
@@ -427,7 +429,8 @@ class TSFE:
         Generate features based on a single column
         Args:
             df(pd.DataFrame):Target DataFrame to append new features to.
-            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            feature:
+            opt (str) : Single-feature operation type (e.g., 'diff', 'lag', 'roll_std').            
+            feature (list of str): List of column names participating in the single operation.
             period (int, str, or list): Time window or  period step(s) for calculation.
         Returns:
             df(pd.DataFrame):Dataframe updated with newly engineered features.
@@ -443,14 +446,14 @@ class TSFE:
 
         def _clean(reset):
             """
-                            Clean MultiIndex resulting from group-by operations and restore original index order
-                            Args:
-                                reset(pd.DataFrame): Intermediate DataFrame resulting from grouped calculations
-            
-                            Returns:
-                                reset(pd.DataFrame): Dataframe sorted back to its original index order
-                        """
-                        # Clean up MultiIndex created by groupby restore original DataFrame order
+                Clean MultiIndex resulting from group-by operations and restore original index order
+                Args:
+                    reset(pd.DataFrame): Intermediate DataFrame resulting from grouped calculations
+
+                Returns:
+                    reset(pd.DataFrame): Dataframe sorted back to its original index order
+            """
+            # Clean up MultiIndex created by groupby restore original DataFrame order
             if isinstance(reset.index, pd.MultiIndex):
                 return reset.reset_index(0, drop=True).sort_index()
             return reset
@@ -514,23 +517,20 @@ class TSFE:
 
         # Robust Residual Percentage: Percentage deviation of current value relative to rolling median over window p 
         elif opt == 'roll_median_percent_res':
-            """
-            Robust residual ( percentage deviation of the current point from the median)
-            """
             for p in period:
                 median_col =df[f'{feature}_roll_median_{p}']
                 df[f'{feature}_robust_residual_{p}'] = (
                     (df[f'{feature}']-median_col)/(median_col +1e-7 )*100
                 )
 
-    def _gen_cross_feature(self, df, opt, feat, period):
+    def _gen_cross_feature(self, df, opt, feat):
         """
             Generate features onvolving interactions between multiple columns
             Args:
                 df(pd.DataFrame):Target DataFrame to append new features to
                 opt (str) : Single-feature operation type (e.g., 'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res')
-                feature (list of str): List of column names participating in the cross operation.
-                period (int, str, or list): Time window or period step(s) for calculation.
+                feat (list of str): List of column names participating in the cross operation.
+
             returns:
                 df(pd.DataFrame):Dataframe updated with newly engineered features.
                 Added columns:'ratio', 'diff_cross', 'multi', 'per_change', 'Z_score_res'
@@ -563,8 +563,8 @@ class TSFE:
             Apply feature engineering rules defined in the config dictionary
             Args:
                 df(pd.DataFrame):Input DataFrame containing raw features and numerical values
-                config(dict): Feature engineering configuration mapping operations (str) to
-                                their  corresponding parameter dictionaries(containing 'cols', 'period', or 'periods').
+                config(dict): Feature engineering configuration mapping operations (str) to 
+                              their  corresponding parameter dictionaries(containing 'cols', 'period', or 'periods').
 
             Returns:
                 df(pd.DataFrame):Dataframe updated with newly engineered features.
@@ -576,7 +576,7 @@ class TSFE:
             period = params.get('period') or params.get('periods', 1) # period's value -> periods's -> 1
             for feature in cols:
                 if opt in cross_opts:
-                    self._gen_cross_feature(df, opt, feature, period)
+                    self._gen_cross_feature(df, opt, feature)
                 else:
                     self._gen_single_feature(df, opt, feature, period)
         return df 
