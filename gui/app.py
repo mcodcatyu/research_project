@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import numpy as np
-from gui.data_processor import GCMDprocessor,TSFE
+from data_processor import GCMDprocessor,TSFE
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, average_precision_score, precision_recall_curve
 
 import glob
