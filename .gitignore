@@ -42,7 +42,7 @@ outputs/
 *.pkl
 *.joblib
 model/
-models/
+
 
 *.bin
 *.model
