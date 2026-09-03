@@ -21,7 +21,7 @@ Thumbs.db
 mlruns/
 mlflow_artifacts/
 outputs/
-models/
+
 .mlflow/
 *.parquet
 *.html
